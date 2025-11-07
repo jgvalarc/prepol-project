@@ -46,6 +46,13 @@ import joblib
 # Visualização rápida (diagnósticos e mapas simples)
 import matplotlib.pyplot as plt
 
+try:
+    from IPython.display import display
+except ImportError:  # fallback para execução fora de notebooks/IPython
+    def display(obj):
+        """Fallback simplificado que imprime o objeto quando IPython não está disponível."""
+        print(obj)
+
 # Configurações mínimas
 RANDOM_STATE = 42
 warnings.filterwarnings("ignore")

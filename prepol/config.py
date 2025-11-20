@@ -1,0 +1,34 @@
+from pathlib import Path
+
+# Base directories
+BASE_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = BASE_DIR / "prepol_data" / "raw"
+OUTPUT_DIR = BASE_DIR / "prepol_out"
+
+# RDO files (expected names)
+RDO_FILES = {
+    "RDO_1": DATA_DIR / "RDO_1.csv",
+    "RDO_2": DATA_DIR / "RDO_2.csv",
+    "RDO_3": DATA_DIR / "RDO_3.csv",
+}
+
+# Defaults for processing
+TIME_FREQ = "D"  # 'D' daily, 'W' weekly, 'M' monthly
+H3_RES = 9
+DEFAULT_TZ = "America/Recife"
+RANDOM_STATE = 42
+
+# Canonical column names
+COL_LAT = "LATITUDE"
+COL_LON = "LONGITUDE"
+COL_DATETIME = "DATA_OCORRENCIA_BO"
+COL_TIME = "HORA_OCORRENCIA_BO"
+COL_CRIME_TYPE = "DESCR_TIPO_BO"
+
+# Export filenames
+RDO_CLEAN_PARQUET = OUTPUT_DIR / "rdo_clean.parquet"
+RDO_CLEAN_CSV = OUTPUT_DIR / "rdo_clean.csv"
+DF_PANEL_PARQUET = OUTPUT_DIR / "df_panel.parquet"
+
+# Model naming helper
+MODEL_PREFIX = "rf_crime_model"

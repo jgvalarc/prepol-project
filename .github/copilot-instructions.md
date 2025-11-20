@@ -77,6 +77,19 @@ Complete spatio-temporal grid (all H3 cells × all time periods):
 - CSV separator: `;` (semicolon) for exports
 - Timestamps in filenames: `%Y%m%d_%H%M%S` format
 
+### 7. Probability Conversion (Predictions)
+Convert predicted crime counts to probabilities using sigmoid:
+```python
+def count_to_probability(count, k=0.5):
+    """Sigmoid: higher counts → higher probability (0-1 range)
+    k controls sensitivity (0.5 default for counts 0-5)"""
+    return 1 / (1 + np.exp(-k * count))
+
+df['crime_probability'] = df['y_pred'].apply(lambda x: count_to_probability(x, k=0.5))
+```
+Alternative: Normalize by max: `df['probability'] = df['y_pred'] / df['y_pred'].max()`  
+Use sigmoid for interpretable probabilities; normalize for relative comparison.
+
 ## Development Workflows
 
 ### Environment Setup
@@ -95,6 +108,13 @@ pip install pandas numpy h3 scikit-learn joblib geopandas folium pyarrow
 4. **ModelUsage.ipynb** - Load model, make predictions → `prepol_predictions_*.csv`
 
 Alternative: **PrePolFullPipeline.ipynb** - End-to-end in single notebook (longer, harder to debug)
+
+**Important**: Each notebook expects to be run from the `notebooks/` directory and uses:
+```python
+project_root = Path.cwd().parent if Path.cwd().name == 'notebooks' else Path.cwd()
+sys.path.insert(0, str(project_root))
+```
+This pattern ensures `prepol` module imports work correctly.
 
 ### Adding Features
 When adding new features to the panel:
@@ -126,7 +146,8 @@ Balances spatial granularity (~0.1 km²) with computational feasibility. For ~1 
   - Vectorize color/boundary calculations before loop
   - Build single GeoJSON object with all features
   - Use `folium.GeoJson()` instead of multiple `folium.Polygon()` calls
-- See `H3Discretization.ipynb` and `ModelUsage2.ipynb` cells with "OPTIMIZED" comment
+  - Example in `ModelUsage.ipynb` cell starting "Create map with predicted crime probabilities (OPTIMIZED)"
+- **Parquet vs CSV**: Parquet loads ~5-10x faster for panel data (preserves dtypes, compression)
 
 ### Model Evaluation
 Current metrics (from metadata):
@@ -145,8 +166,20 @@ Current metrics (from metadata):
 - `prepol/config.py` - All configurable parameters
 - `prepol/helpers.py` - Reusable functions (start here for utilities)
 - `notebooks/H3Discretization.ipynb` - Panel structure definition (lines 421-513: Folium map visualization)
+- `notebooks/ModelUsage.ipynb` - Sigmoid probability conversion, GeoJSON optimization
 - `model/rf_crime_model_meta_*.json` - Model performance baseline
 - `PrePol&DatasetReport.md` - Original data documentation (Portuguese)
+
+## Helper Functions Quick Reference
+Common utilities from `prepol.helpers`:
+- `normalize_df_columns_to_upper(df)` - **Always call first** on new DataFrames
+- `carregar_dataset(path, nome, nrows=None)` - Load CSV with normalization
+- `to_h3(lat, lon, res)` - Convert coordinates to H3 cell (handles library versions)
+- `h3_neighbors(cell, k=1)` - Get k-ring neighbors for spatial features
+- `h3_to_geo(cell)` - H3 cell to (lat, lon) centroid
+- `h3_to_boundary(cell)` - H3 cell to polygon boundary coords
+- `choose_csv_engine()` - Auto-select best CSV engine (pyarrow > python)
+- `save_parquet_and_csv(df, parquet_path, csv_path)` - Dual export convenience
 
 ## Testing & Validation
 No formal test suite yet. Validation approach:

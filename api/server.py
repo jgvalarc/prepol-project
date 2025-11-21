@@ -119,26 +119,39 @@ def load_panel_data():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
-    return jsonify({
+    response = jsonify({
         'status': 'healthy',
         'model_loaded': rf_model is not None,
-        'panel_loaded': df_panel is not None
+        'panel_loaded': df_panel is not None,
+        'panel_shape': df_panel.shape if df_panel is not None else None,
+        'date_range': {
+            'min': df_panel['timestamp'].min().strftime('%Y-%m-%d') if df_panel is not None else None,
+            'max': df_panel['timestamp'].max().strftime('%Y-%m-%d') if df_panel is not None else None
+        } if df_panel is not None else None
     })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 @app.route('/api/metadata', methods=['GET'])
 def get_metadata():
     """Return available date range and model info."""
-    if df_panel is None:
-        return jsonify({'error': 'Panel data not loaded'}), 500
-    
-    return jsonify({
-        'date_range': {
-            'min': df_panel['timestamp'].min().strftime('%Y-%m-%d'),
-            'max': df_panel['timestamp'].max().strftime('%Y-%m-%d')
-        },
-        'total_cells': int(df_panel['h3_cell'].nunique()),
-        'model_metrics': metadata['metrics']['test'] if metadata else {}
-    })
+    try:
+        if df_panel is None:
+            return jsonify({'error': 'Panel data not loaded'}), 500
+        
+        return jsonify({
+            'date_range': {
+                'min': df_panel['timestamp'].min().strftime('%Y-%m-%d'),
+                'max': df_panel['timestamp'].max().strftime('%Y-%m-%d')
+            },
+            'total_cells': int(df_panel['h3_cell'].nunique()),
+            'model_metrics': metadata['metrics']['test'] if metadata else {}
+        })
+    except Exception as e:
+        print(f"❌ Metadata endpoint error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/predict', methods=['POST'])
 def predict():

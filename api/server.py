@@ -86,7 +86,8 @@ def load_panel_data():
     """Load panel data on startup."""
     global df_panel
     
-    panel_path = project_root / "panels" / "PrePol_panel_export.parquet"
+    # Use reduced dataset for deployment (Q4 2016 only - fits in 512MB RAM)
+    panel_path = project_root / "panels" / "PrePol_panel_2016Q4.parquet"
     
     print(f"Looking for panel data at: {panel_path}")
     print(f"Panel file exists: {panel_path.exists()}")

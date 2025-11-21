@@ -11,14 +11,16 @@ This guide will help you deploy PrePol as a student prototype:
 
 Your model files are reasonably sized and can be committed to Git:
 - `rf_crime_model_20251119_1852.joblib` (~64 MB)
-- `PrePol_panel_export.parquet` (~51 MB)
+- `PrePol_panel_2016Q4.parquet` (~1.7 MB - Q4 2016 data only)
+
+**Note**: The panel data is reduced to Q4 2016 (Oct-Dec) to fit within Render's 512MB RAM limit. Full dataset (2013-2016) uses ~2.7GB in memory.
 
 Both are **under GitHub's 100MB limit**, so you can commit them directly! However, if you prefer to keep your repository lean, you can still use GitHub Releases or Git LFS.
 
 ### Option A: Commit Directly to Git (Simplest)
 ```bash
 git add model/rf_crime_model_20251119_1852.joblib
-git add panels/PrePol_panel_export.parquet
+git add panels/PrePol_panel_2016Q4.parquet
 git commit -m "Add model and data files for deployment"
 git push origin main
 ```
@@ -54,7 +56,7 @@ git status
 
 # If not, add them
 git add model/rf_crime_model_20251119_1852.joblib
-git add panels/PrePol_panel_export.parquet
+git add panels/PrePol_panel_2016Q4.parquet
 git commit -m "Add model and data files"
 git push origin main
 ```
@@ -179,10 +181,11 @@ Node.js Version: 18.x
 
 **"Out of memory"**
 - Free tier has 512MB RAM limit
-- Your panel data (~51MB) + model (~64MB) should fit comfortably
-- If you encounter issues:
-  - Monitor memory usage in Render logs
-  - Consider upgrading to Starter plan ($7/month, 2GB RAM) if needed
+- Reduced dataset (Q4 2016) uses ~400MB with model loaded
+- If you still encounter OOM:
+  - Check Render logs for actual memory usage
+  - Consider upgrading to Starter plan ($7/month, 2GB RAM)
+  - Or further reduce date range in panel data
 
 **"Operation timed out"**
 - Render free tier can be slow for large predictions

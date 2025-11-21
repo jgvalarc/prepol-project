@@ -121,7 +121,7 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
         
         // Validate dates
         if (!startDate || !endDate) {
-            setError('Please select both start and end dates');
+            setError('Por favor, selecione as datas de início e fim');
             return;
         }
 
@@ -132,11 +132,11 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
         // Validate date range
         const daysDiff = endDate.diff(startDate, 'day') + 1;
         if (daysDiff < 1) {
-            setError('End date must be after start date');
+            setError('A data final deve ser posterior à data inicial');
             return;
         }
         if (daysDiff > 31) {
-            setError('Date range cannot exceed 31 days');
+            setError('O intervalo de datas não pode exceder 31 dias');
             return;
         }
 
@@ -148,7 +148,7 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
             const selectedEnd = endDate.toDate();
 
             if (selectedStart < availableStart || selectedEnd > availableEnd) {
-                setError(`Selected dates must be between ${dateRange.min} and ${dateRange.max}`);
+                setError(`As datas selecionadas devem estar entre ${dateRange.min} e ${dateRange.max}`);
                 return;
             }
         }
@@ -255,7 +255,7 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
                                 transition: 'color 0.3s ease'
                             }}
                         >
-                            {dateRange ? `Available: ${dateRange.min} to ${dateRange.max}` : 'Loading date range...'}
+                            {dateRange ? `Disponível: ${dateRange.min} a ${dateRange.max}` : 'Carregando intervalo de datas...'}
                         </Typography>
                     )}
                 </Stack>

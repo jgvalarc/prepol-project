@@ -60,22 +60,22 @@ export default function CrimeMap({ predictionData, loading, error }) {
       const props = feature.properties;
       const popupContent = `
         <div style="font-family: Arial, sans-serif; font-size: 12px;">
-          <b style="font-size: 14px;">Crime Occurrence Probability</b><br/>
+          <b style="font-size: 14px;">Probabilidade de Ocorrência de Crime</b><br/>
           <hr style="margin: 5px 0; border: none; border-top: 1px solid #ddd;"/>
-          <b>Cell:</b> ${props.h3_cell.substring(0, 8)}...<br/>
-          <b>Probability:</b> ${(props.probability * 100).toFixed(1)}%<br/>
-          <b>Period:</b> ${props.n_days} days<br/>
+          <b>Célula:</b> ${props.h3_cell.substring(0, 8)}...<br/>
+          <b>Probabilidade:</b> ${(props.probability * 100).toFixed(1)}%<br/>
+          <b>Período:</b> ${props.n_days} dias<br/>
           <hr style="margin: 5px 0; border: none; border-top: 1px solid #ddd;"/>
-          <b>Daily Avg Prediction:</b> ${props.predicted_daily_avg.toFixed(3)}/day<br/>
-          <b>Total Predicted:</b> ${props.predicted_total.toFixed(1)}<br/>
-          <b>Total Actual:</b> ${props.actual_total}<br/>
-          <b>Prediction Error:</b> ${Math.abs(props.predicted_total - props.actual_total).toFixed(1)}
+          <b>Média Diária Prevista:</b> ${props.predicted_daily_avg.toFixed(3)}/dia<br/>
+          <b>Total Previsto:</b> ${props.predicted_total.toFixed(1)}<br/>
+          <b>Total Real:</b> ${props.actual_total}<br/>
+          <b>Erro de Predição:</b> ${Math.abs(props.predicted_total - props.actual_total).toFixed(1)}
         </div>
       `;
       layer.bindPopup(popupContent);
 
       // Tooltip on hover
-      layer.bindTooltip(`Probability: ${(props.probability * 100).toFixed(1)}%`, {
+      layer.bindTooltip(`Probabilidade: ${(props.probability * 100).toFixed(1)}%`, {
         sticky: true
       });
     }
@@ -119,43 +119,43 @@ export default function CrimeMap({ predictionData, loading, error }) {
         }}
       >
         <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1 }}>
-          Crime Probability Statistics
+          Estatísticas de Probabilidade de Crimes
         </Typography>
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Period:</b> {summary.date_range.start} to {summary.date_range.end} ({summary.date_range.days} days)
+          <b>Período:</b> {summary.date_range.start} a {summary.date_range.end} ({summary.date_range.days} dias)
         </Typography>
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Cells displayed:</b> {summary.displayed_cells.toLocaleString()} of {summary.total_cells.toLocaleString()}
-        </Typography>
-        
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Mean probability:</b> {(stats.mean_probability * 100).toFixed(1)}%
-        </Typography>
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Median probability:</b> {(stats.median_probability * 100).toFixed(1)}%
-        </Typography>
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>High risk cells (&gt;80%):</b> {stats.high_risk_cells}
+          <b>Células exibidas:</b> {summary.displayed_cells.toLocaleString()} de {summary.total_cells.toLocaleString()}
         </Typography>
         
         <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Total predicted:</b> {stats.total_predicted.toFixed(0)} crimes
+          <b>Probabilidade média:</b> {(stats.mean_probability * 100).toFixed(1)}%
+        </Typography>
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Probabilidade mediana:</b> {(stats.median_probability * 100).toFixed(1)}%
+        </Typography>
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Células de alto risco (&gt;80%):</b> {stats.high_risk_cells}
+        </Typography>
+        
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Total previsto:</b> {stats.total_predicted.toFixed(0)} crimes
         </Typography>
         
         <Typography variant="body2">
-          <b>Total actual:</b> {stats.total_actual} crimes
+          <b>Total real:</b> {stats.total_actual} crimes
         </Typography>
 
         <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#aaa' }}>
-          Method: Poisson (P ≥ 1 crime/day)
+          Método: Poisson (P ≥ 1 crime/dia)
         </Typography>
       </Box>
     );
@@ -177,10 +177,10 @@ export default function CrimeMap({ predictionData, loading, error }) {
       >
         <CircularProgress size={60} sx={{ color: '#7011ff' }} />
         <Typography variant="h6" sx={{ mt: 2, color: 'white' }}>
-          Generating predictions...
+          Gerando predições...
         </Typography>
         <Typography variant="body2" sx={{ mt: 1, color: '#aaa' }}>
-          This may take a few seconds
+          Isso pode levar alguns segundos
         </Typography>
       </Box>
     );
@@ -201,7 +201,7 @@ export default function CrimeMap({ predictionData, loading, error }) {
         }}
       >
         <Alert severity="error" sx={{ maxWidth: 500 }}>
-          <Typography variant="h6">Prediction Error</Typography>
+          <Typography variant="h6">Erro de Predição</Typography>
           <Typography variant="body2">{error}</Typography>
         </Alert>
       </Box>
@@ -223,10 +223,10 @@ export default function CrimeMap({ predictionData, loading, error }) {
         }}
       >
         <Typography variant="h5" sx={{ color: 'white', mb: 2 }}>
-          Select a date range to view predictions
+          Selecione um intervalo de datas para ver as predições
         </Typography>
         <Typography variant="body1" sx={{ color: '#aaa' }}>
-          Use the controls in the top-right to configure your analysis
+          Use os controles no canto superior direito para configurar sua análise
         </Typography>
       </Box>
     );

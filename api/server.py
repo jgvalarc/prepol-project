@@ -290,9 +290,11 @@ def predict():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
+# Initialize model and data on module import (works with both Flask dev server and gunicorn)
+def initialize_app():
+    """Initialize model and panel data."""
     print("="*60)
-    print("PrePol API Server - Starting")
+    print("PrePol API Server - Initializing")
     print("="*60)
     
     # Print library versions
@@ -352,22 +354,28 @@ if __name__ == '__main__':
         print("\n" + "="*60)
         print("✓ Server ready!")
         print("="*60)
-        print(f"API running at: http://localhost:5000")
-        print(f"Health check: http://localhost:5000/api/health")
-        print(f"Metadata: http://localhost:5000/api/metadata")
-        print("="*60 + "\n")
-        
-        # Get port from environment variable (Render uses PORT env var)
-        port = int(os.environ.get('PORT', 5000))
-        # Get host - use 0.0.0.0 for production, allows external connections
-        host = '0.0.0.0'
-        # Disable debug mode in production
-        debug_mode = os.environ.get('FLASK_ENV') == 'development'
-        
-        app.run(debug=debug_mode, host=host, port=port)
         
     except Exception as e:
-        print(f"\n❌ Failed to start server: {str(e)}")
+        print(f"\n❌ Failed to initialize: {str(e)}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        raise
+
+# Initialize on module import (called by both gunicorn and direct execution)
+initialize_app()
+
+if __name__ == '__main__':
+    # This block only runs when executing directly with python
+    print(f"API running at: http://localhost:5000")
+    print(f"Health check: http://localhost:5000/api/health")
+    print(f"Metadata: http://localhost:5000/api/metadata")
+    print("="*60 + "\n")
+    
+    # Get port from environment variable (Render uses PORT env var)
+    port = int(os.environ.get('PORT', 5000))
+    # Get host - use 0.0.0.0 for production, allows external connections
+    host = '0.0.0.0'
+    # Disable debug mode in production
+    debug_mode = os.environ.get('FLASK_ENV') == 'development'
+    
+    app.run(debug=debug_mode, host=host, port=port)

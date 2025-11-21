@@ -174,6 +174,19 @@ Node.js Version: 18.x
 
 ### Backend Issues
 
+**"Failed to fetch" in frontend**
+- **Most common**: Backend is spinning down (free tier sleeps after 15min)
+  - Solution: Wait 30-60 seconds for first request after idle
+  - Or visit health check first: `https://prepol-project.onrender.com/api/health`
+- **CORS not configured**: Check Render logs for CORS errors
+  - Backend should allow origin `*` for prototype
+- **Wrong API URL**: Verify `VITE_API_URL` in Vercel environment variables
+  - Should be: `https://prepol-project.onrender.com` (no trailing slash)
+- **502 Bad Gateway**: Backend crashed or timed out
+  - Check Render logs for Python errors
+  - Increase timeout in Procfile (currently 180s)
+  - Memory issue: Reduce date range in predictions
+
 **"Application failed to respond"**
 - Check Render logs: Dashboard → Your Service → Logs
 - Look for Python errors or missing dependencies
@@ -199,42 +212,14 @@ Node.js Version: 18.x
 
 ### Frontend Issues
 
-**"Failed to fetch" / "Prediction Error"**
-This is the most common issue after deployment. Check these in order:
-
-1. **Verify environment variable in Vercel:**
-   - Go to Vercel Dashboard → Your Project → Settings → Environment Variables
-   - Ensure `VITE_API_URL` is set to: `https://prepol-project.onrender.com`
-   - Must be set for **Production** environment
-   - After adding/changing: Go to Deployments → Redeploy (three dots menu)
-
-2. **Check backend is running:**
-   - Open in browser: `https://prepol-project.onrender.com/api/health`
-   - Should return: `{"status":"healthy","model_loaded":true,"panel_loaded":true}`
-   - If not responding: Check Render logs, service may be spinning up (takes 30-60s)
-
-3. **Check browser console (F12):**
-   - Look for actual error message
-   - If CORS error: Backend should allow all origins, but check Render logs
-   - If 404: Environment variable not set correctly in Vercel
-
-4. **Test API directly:**
-   ```bash
-   curl -X POST https://prepol-project.onrender.com/api/predict \
-     -H "Content-Type: application/json" \
-     -d '{"start_date":"2016-12-01","end_date":"2016-12-07"}'
-   ```
-   Should return GeoJSON data. If this works but frontend doesn't, it's an env var issue.
-
 **"Failed to fetch predictions"**
-- First check #1 above (environment variable)
+- Check API URL in `.env.production`
 - Verify backend is running (visit health check endpoint)
-- Check browser console for specific error
+- Check browser console for CORS errors
 
 **CORS Error**
-- Backend CORS allows all origins (`"*"`)
-- If you see CORS errors, backend may not be running
-- Check Render logs for startup errors
+- Backend CORS should allow all origins (`"*"`)
+- If restricting, add your Vercel domain to allowed origins
 
 **Map doesn't render**
 - Check browser console for errors

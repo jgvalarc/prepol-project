@@ -70,23 +70,29 @@ git push origin main
 3. Select `prepol-project`
 
 ### Step 5: Configure Service
+**IMPORTANT**: Enter these settings exactly as shown:
+
 ```
 Name: prepol-api
 Region: Oregon (US West) or closest to you
 Branch: main
-Root Directory: (leave empty)
+Root Directory: (leave blank)
 Runtime: Python 3
 Build Command: pip install -r api/requirements.txt
 Start Command: gunicorn --chdir api wsgi:app --timeout 120
 Instance Type: Free
 ```
 
-### Step 6: Environment Variables (Optional)
-Click **Advanced** → **Add Environment Variable** if needed:
+**Common mistake**: Make sure you filled in the **Build Command** field! If it's empty, gunicorn won't be installed.
+
+### Step 6: Environment Variables (REQUIRED)
+Click **Advanced** → **Add Environment Variable**:
 
 ```
-PYTHON_VERSION = 3.9
+PYTHON_VERSION = 3.11.0
 ```
+
+**CRITICAL**: scikit-learn 1.3.0 is not compatible with Python 3.13. You MUST set Python version to 3.11 or the build will fail with Cython errors.
 
 **Note:** Since your model files are committed to Git, Render will automatically have access to them. No need for MODEL_URL/PANEL_URL environment variables!
 
@@ -94,12 +100,12 @@ PYTHON_VERSION = 3.9
 1. Click **Create Web Service**
 2. Wait 5-10 minutes for first deployment
 3. Watch logs for any errors
-4. Once deployed, copy your backend URL:
-   - Example: `https://prepol-api.onrender.com`
+4. Your backend URL will be:
+   - `https://prepol-project.onrender.com`
 
 ### Step 8: Test Backend
 Visit in browser:
-- Health check: `https://prepol-api.onrender.com/api/health`
+- Health check: `https://prepol-project.onrender.com/api/health`
 - Should return: `{"status":"healthy","model_loaded":true,"panel_loaded":true}`
 
 ---
@@ -109,7 +115,7 @@ Visit in browser:
 ### Step 1: Update Production API URL
 Edit `front/.env.production`:
 ```
-VITE_API_URL=https://prepol-api.onrender.com
+VITE_API_URL=https://prepol-project.onrender.com
 ```
 
 Commit and push:
@@ -144,7 +150,7 @@ Node.js Version: 18.x
 2. Add variable:
    ```
    Name: VITE_API_URL
-   Value: https://prepol-api.onrender.com
+   Value: https://prepol-project.onrender.com
    ```
 3. Check all environments: Production, Preview, Development
 

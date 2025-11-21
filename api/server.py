@@ -86,7 +86,7 @@ def load_panel_data():
     """Load panel data on startup."""
     global df_panel
     
-    panel_path = project_root / "notebooks" / "prepol_out" / "PrePol_panel_export.parquet"
+    panel_path = project_root / "panels" / "PrePol_panel_export.parquet"
     
     print(f"Looking for panel data at: {panel_path}")
     print(f"Panel file exists: {panel_path.exists()}")

@@ -18,7 +18,7 @@ Both are **under GitHub's 100MB limit**, so you can commit them directly! Howeve
 ### Option A: Commit Directly to Git (Simplest)
 ```bash
 git add model/rf_crime_model_20251119_1852.joblib
-git add notebooks/prepol_out/PrePol_panel_export.parquet
+git add panels/PrePol_panel_export.parquet
 git commit -m "Add model and data files for deployment"
 git push origin main
 ```
@@ -54,7 +54,7 @@ git status
 
 # If not, add them
 git add model/rf_crime_model_20251119_1852.joblib
-git add notebooks/prepol_out/PrePol_panel_export.parquet
+git add panels/PrePol_panel_export.parquet
 git commit -m "Add model and data files"
 git push origin main
 ```

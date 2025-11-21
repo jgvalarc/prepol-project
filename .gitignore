@@ -8,7 +8,7 @@ __pycache__/
 
 # Prepol stuff
 prepol_data/
-notebooks/prepol_data
+notebooks/
 prepol_out/
 
 # Distribution / packaging

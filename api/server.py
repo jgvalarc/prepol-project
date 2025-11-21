@@ -1,6 +1,10 @@
 """
 PrePol Flask API Server
 Serves crime probability predictions from trained RandomForest model.
+
+DATA SOURCE CONFIGURATION:
+- Set USE_MONGODB = True to use MongoDB Atlas (requires MONGODB_URI env var)
+- Set USE_MONGODB = False to use local parquet file (default for local testing)
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -12,6 +16,10 @@ import json
 from datetime import datetime
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add prepol module to path
 project_root = Path(__file__).resolve().parents[1]
@@ -19,6 +27,12 @@ sys.path.insert(0, str(project_root))
 
 import prepol.config as config
 import prepol.helpers as helpers
+
+# ============================================================================
+# DATA SOURCE CONFIGURATION - Change this to switch between parquet and MongoDB
+# ============================================================================
+USE_MONGODB = True  # Set to True to use MongoDB, False to use local parquet
+# ============================================================================
 
 app = Flask(__name__)
 
@@ -34,7 +48,9 @@ CORS(app, resources={
 # Global variables for model and data
 rf_model = None
 metadata = None
-df_panel = None
+df_panel = None  # Used when USE_MONGODB = False
+mongo_client = None  # Used when USE_MONGODB = True
+mongo_collection = None  # Used when USE_MONGODB = True
 
 def count_to_probability(daily_avg_count):
     """Convert daily average crime count to probability using Poisson distribution.
@@ -82,21 +98,16 @@ def load_model():
     
     print(f"✓ Model loaded - Test R²: {metadata['metrics']['test']['r2']:.4f}")
 
-def load_panel_data():
-    """Load panel data on startup."""
+def load_panel_data_parquet():
+    """Load panel data from parquet file (local mode)."""
     global df_panel
     
-    # Use reduced dataset for deployment (Q4 2016 only - fits in 512MB RAM)
-    panel_path = project_root / "panels" / "PrePol_panel_2016Q4.parquet"
+    # Dataset to be used. Change filename as needed. Reminder: Full panel is too large for Render free tier.
+    panel_path = project_root / "panels" / "PrePol_panel_2013-2016.parquet"
     
+    print(f"Loading panel data from PARQUET...")
     print(f"Looking for panel data at: {panel_path}")
     print(f"Panel file exists: {panel_path.exists()}")
-    print(f"Parent directory exists: {panel_path.parent.exists()}")
-    
-    if panel_path.parent.exists():
-        print(f"Files in {panel_path.parent}:")
-        for f in panel_path.parent.iterdir():
-            print(f"  - {f.name}")
     
     if not panel_path.exists():
         print(f"❌ Panel data not found: {panel_path}")
@@ -112,23 +123,148 @@ def load_panel_data():
         else:
             df_panel['time_period_str'] = df_panel['time_period']
     
-    print(f"✓ Panel loaded: {df_panel.shape[0]:,} records")
+    print(f"✓ Parquet panel loaded: {df_panel.shape[0]:,} records")
     print(f"  Date range: {df_panel['timestamp'].min()} to {df_panel['timestamp'].max()}")
     print(f"  H3 cells: {df_panel['h3_cell'].nunique():,}")
+
+def load_panel_data_mongodb():
+    """Connect to MongoDB and set up collection access (MongoDB mode)."""
+    global mongo_client, mongo_collection
+    
+    print(f"Connecting to MONGODB...")
+    
+    # Get MongoDB URI from environment
+    MONGODB_URI = os.environ.get('MONGODB_URI')
+    
+    if not MONGODB_URI:
+        print(f"❌ MONGODB_URI environment variable not set!")
+        print(f"   Set it with: $env:MONGODB_URI = 'your-uri-here'")
+        raise ValueError("MONGODB_URI environment variable is required when USE_MONGODB = True")
+    
+    try:
+        from pymongo import MongoClient
+        
+        # Connect to MongoDB
+        mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        
+        # Test connection
+        mongo_client.admin.command('ping')
+        
+        # Get collection
+        db = mongo_client.prepol_db
+        mongo_collection = db.panel_data
+        
+        # Get statistics
+        total_docs = mongo_collection.count_documents({})
+        
+        # Get date range from metadata
+        metadata_col = db.metadata
+        metadata_doc = metadata_col.find_one({'_id': 'model_info'})
+        
+        print(f"✓ MongoDB connected: {total_docs:,} documents")
+        if metadata_doc:
+            date_range = metadata_doc.get('date_range', {})
+            print(f"  Date range: {date_range.get('min')} to {date_range.get('max')}")
+            print(f"  H3 cells: {metadata_doc.get('total_cells', 'N/A'):,}")
+        
+    except ImportError:
+        print(f"❌ pymongo not installed!")
+        print(f"   Install with: pip install pymongo")
+        raise
+    except Exception as e:
+        print(f"❌ MongoDB connection failed: {str(e)}")
+        raise
+
+def get_panel_data_mongodb(start_date, end_date):
+    """Query MongoDB for date range and return as DataFrame.
+    
+    Args:
+        start_date: Start date string (YYYY-MM-DD)
+        end_date: End date string (YYYY-MM-DD)
+    
+    Returns:
+        DataFrame with panel data for the date range
+    """
+    # Convert to datetime
+    start_dt = pd.to_datetime(start_date).to_pydatetime()
+    end_dt = pd.to_datetime(end_date).to_pydatetime()
+    
+    # Query MongoDB
+    cursor = mongo_collection.find({
+        'date': {'$gte': start_dt, '$lte': end_dt}
+    })
+    
+    # Convert to list (this loads all documents into memory)
+    docs = list(cursor)
+    
+    if not docs:
+        return pd.DataFrame()
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(docs)
+    
+    # Flatten nested features
+    features_df = pd.json_normalize(df['features'])
+    df = pd.concat([df.drop('features', axis=1), features_df], axis=1)
+    
+    # Add required columns
+    df['timestamp'] = df['date']
+    df['time_period_str'] = df['date'].dt.strftime('%Y-%m-%d')
+    
+    # Extract lat/lon from coords
+    df['lat'] = df['coords'].apply(lambda x: x['lat'])
+    df['lon'] = df['coords'].apply(lambda x: x['lon'])
+    
+    return df
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
-    response = jsonify({
-        'status': 'healthy',
-        'model_loaded': rf_model is not None,
-        'panel_loaded': df_panel is not None,
-        'panel_shape': df_panel.shape if df_panel is not None else None,
-        'date_range': {
-            'min': df_panel['timestamp'].min().strftime('%Y-%m-%d') if df_panel is not None else None,
-            'max': df_panel['timestamp'].max().strftime('%Y-%m-%d') if df_panel is not None else None
-        } if df_panel is not None else None
-    })
+    if USE_MONGODB:
+        # MongoDB mode
+        panel_loaded = mongo_collection is not None
+        date_range = None
+        panel_shape = None
+        
+        if panel_loaded:
+            try:
+                # Get metadata from MongoDB
+                metadata_col = mongo_client.prepol_db.metadata
+                metadata_doc = metadata_col.find_one({'_id': 'model_info'})
+                if metadata_doc:
+                    dr = metadata_doc.get('date_range', {})
+                    date_range = {
+                        'min': dr.get('min').strftime('%Y-%m-%d') if dr.get('min') else None,
+                        'max': dr.get('max').strftime('%Y-%m-%d') if dr.get('max') else None
+                    }
+                    total_docs = metadata_doc.get('total_records', 0)
+                    total_cells = metadata_doc.get('total_cells', 0)
+                    panel_shape = [total_docs, total_cells]
+            except:
+                pass
+        
+        response = jsonify({
+            'status': 'healthy',
+            'data_source': 'mongodb',
+            'model_loaded': rf_model is not None,
+            'panel_loaded': panel_loaded,
+            'panel_shape': panel_shape,
+            'date_range': date_range
+        })
+    else:
+        # Parquet mode
+        response = jsonify({
+            'status': 'healthy',
+            'data_source': 'parquet',
+            'model_loaded': rf_model is not None,
+            'panel_loaded': df_panel is not None,
+            'panel_shape': df_panel.shape if df_panel is not None else None,
+            'date_range': {
+                'min': df_panel['timestamp'].min().strftime('%Y-%m-%d') if df_panel is not None else None,
+                'max': df_panel['timestamp'].max().strftime('%Y-%m-%d') if df_panel is not None else None
+            } if df_panel is not None else None
+        })
+    
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 
@@ -136,17 +272,42 @@ def health_check():
 def get_metadata():
     """Return available date range and model info."""
     try:
-        if df_panel is None:
-            return jsonify({'error': 'Panel data not loaded'}), 500
-        
-        return jsonify({
-            'date_range': {
-                'min': df_panel['timestamp'].min().strftime('%Y-%m-%d'),
-                'max': df_panel['timestamp'].max().strftime('%Y-%m-%d')
-            },
-            'total_cells': int(df_panel['h3_cell'].nunique()),
-            'model_metrics': metadata['metrics']['test'] if metadata else {}
-        })
+        if USE_MONGODB:
+            # MongoDB mode
+            if mongo_collection is None:
+                return jsonify({'error': 'MongoDB not connected'}), 500
+            
+            # Get metadata from MongoDB
+            metadata_col = mongo_client.prepol_db.metadata
+            metadata_doc = metadata_col.find_one({'_id': 'model_info'})
+            
+            if not metadata_doc:
+                return jsonify({'error': 'Metadata not found in MongoDB'}), 500
+            
+            date_range = metadata_doc.get('date_range', {})
+            return jsonify({
+                'date_range': {
+                    'min': date_range.get('min').strftime('%Y-%m-%d') if date_range.get('min') else None,
+                    'max': date_range.get('max').strftime('%Y-%m-%d') if date_range.get('max') else None
+                },
+                'total_cells': int(metadata_doc.get('total_cells', 0)),
+                'model_metrics': metadata['metrics']['test'] if metadata else {},
+                'data_source': 'mongodb'
+            })
+        else:
+            # Parquet mode
+            if df_panel is None:
+                return jsonify({'error': 'Panel data not loaded'}), 500
+            
+            return jsonify({
+                'date_range': {
+                    'min': df_panel['timestamp'].min().strftime('%Y-%m-%d'),
+                    'max': df_panel['timestamp'].max().strftime('%Y-%m-%d')
+                },
+                'total_cells': int(df_panel['h3_cell'].nunique()),
+                'model_metrics': metadata['metrics']['test'] if metadata else {},
+                'data_source': 'parquet'
+            })
     except Exception as e:
         print(f"❌ Metadata endpoint error: {str(e)}")
         import traceback
@@ -190,11 +351,16 @@ def predict():
         if days_diff > 31:
             return jsonify({'error': 'Date range cannot exceed 31 days'}), 400
         
-        # Filter panel data for target date range
-        df_target = df_panel[
-            (df_panel['time_period_str'] >= start_date) & 
-            (df_panel['time_period_str'] <= end_date)
-        ].copy()
+        # Get panel data based on data source
+        if USE_MONGODB:
+            print(f"  Querying MongoDB for date range...")
+            df_target = get_panel_data_mongodb(start_date, end_date)
+        else:
+            print(f"  Filtering parquet data for date range...")
+            df_target = df_panel[
+                (df_panel['time_period_str'] >= start_date) & 
+                (df_panel['time_period_str'] <= end_date)
+            ].copy()
         
         if len(df_target) == 0:
             return jsonify({'error': 'No data available for this date range'}), 404
@@ -217,9 +383,14 @@ def predict():
         # Add predictions to dataframe
         df_target['y_pred'] = np.clip(y_pred, 0, None)
         
-        # Add coordinates
-        df_target['lat'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[0])
-        df_target['lon'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[1])
+        # Add coordinates (use existing coords if from MongoDB, otherwise compute)
+        if USE_MONGODB and 'lat' in df_target.columns and 'lon' in df_target.columns:
+            # Coordinates already extracted from MongoDB coords field
+            pass
+        else:
+            # Compute coordinates from H3 cells
+            df_target['lat'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[0])
+            df_target['lon'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[1])
         
         # Aggregate by cell (temporal averaging)
         df_cell_agg = df_target.groupby('h3_cell').agg({
@@ -310,6 +481,8 @@ def initialize_app():
     print("="*60)
     print("PrePol API Server - Initializing")
     print("="*60)
+    print(f"\n🔧 DATA SOURCE: {'MongoDB' if USE_MONGODB else 'Parquet (Local)'}")
+    print(f"   To switch: Edit USE_MONGODB in server.py (line ~30)\n")
     
     # Print library versions
     print("\n📚 Installed Libraries:")
@@ -353,6 +526,13 @@ def initialize_app():
     except ImportError:
         print("  • pyarrow: Not installed")
     
+    if USE_MONGODB:
+        try:
+            import pymongo
+            print(f"  • pymongo: {pymongo.__version__}")
+        except ImportError:
+            print("  • pymongo: NOT INSTALLED (required for MongoDB mode)")
+    
     print()
     
     # Print working directory and project structure
@@ -363,10 +543,16 @@ def initialize_app():
     
     try:
         load_model()
-        load_panel_data()
+        
+        # Load data based on USE_MONGODB flag
+        if USE_MONGODB:
+            load_panel_data_mongodb()
+        else:
+            load_panel_data_parquet()
         
         print("\n" + "="*60)
         print("✓ Server ready!")
+        print(f"  Data source: {'MongoDB' if USE_MONGODB else 'Parquet'}")
         print("="*60)
         
     except Exception as e:

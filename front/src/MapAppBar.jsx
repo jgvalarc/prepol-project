@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -11,13 +11,15 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import Menu from '@mui/material/Menu'; 
+import Menu from '@mui/material/Menu';
+import CircularProgress from '@mui/material/CircularProgress'; 
 
 // Importações para Pickers
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import dayjs from 'dayjs';
 
 // 1. Importação dos Ícones
 import HomeIcon from '@mui/icons-material/Home';
@@ -74,6 +76,9 @@ const darkInputStyle = {
     }
 };
 
+// API configuration
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 // --- CONTEÚDO DO MENU DE PREDIÇÃO (Aplicando Estilos) ---
 function PredictionMenuContent({ onClose, onApplyFilters }) {
     // ... (Estados mantidos)
@@ -83,6 +88,29 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
     const [endTime, setEndTime] = useState(null);
     const [model, setModel] = useState('');
     const [error, setError] = useState('');
+    const [dateRange, setDateRange] = useState(null);
+    const [loadingMetadata, setLoadingMetadata] = useState(true);
+
+    // Fetch available date range from API
+    useEffect(() => {
+        const fetchMetadata = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/metadata`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch metadata');
+                }
+                const data = await response.json();
+                setDateRange(data.date_range);
+            } catch (err) {
+                console.error('Error fetching metadata:', err);
+                setDateRange({ min: 'N/A', max: 'N/A' });
+            } finally {
+                setLoadingMetadata(false);
+            }
+        };
+
+        fetchMetadata();
+    }, []);
 
     const handleModelChange = (event) => {
         setModel(event.target.value);
@@ -110,6 +138,19 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
         if (daysDiff > 31) {
             setError('Date range cannot exceed 31 days');
             return;
+        }
+
+        // Validate against available date range
+        if (dateRange && dateRange.min && dateRange.max) {
+            const availableStart = new Date(dateRange.min);
+            const availableEnd = new Date(dateRange.max);
+            const selectedStart = startDate.toDate();
+            const selectedEnd = endDate.toDate();
+
+            if (selectedStart < availableStart || selectedEnd > availableEnd) {
+                setError(`Selected dates must be between ${dateRange.min} and ${dateRange.max}`);
+                return;
+            }
         }
 
         // Call parent handler with date range
@@ -153,13 +194,23 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
                         label="Data Inicial"
                         value={startDate}
                         onChange={setStartDate}
-                        slotProps={{ textField: { fullWidth: true, size: "small", sx: darkInputStyle } }}
+                        minDate={dateRange?.min ? dayjs(dateRange.min) : undefined}
+                        maxDate={dateRange?.max ? dayjs(dateRange.max) : undefined}
+                        slotProps={{ 
+                            textField: { 
+                                fullWidth: true, 
+                                size: "small", 
+                                sx: darkInputStyle
+                            } 
+                        }}
                     />
                     <DatePicker
                         format='DD/MM/YYYY' 
                         label="Data Final"
                         value={endDate}
                         onChange={setEndDate}
+                        minDate={dateRange?.min ? dayjs(dateRange.min) : undefined}
+                        maxDate={dateRange?.max ? dayjs(dateRange.max) : undefined}
                         slotProps={{ textField: { fullWidth: true, size: "small", sx: darkInputStyle } }}
                     />
 
@@ -189,9 +240,24 @@ function PredictionMenuContent({ onClose, onApplyFilters }) {
                         Aplicar Filtros
                     </Button>
                     
-                    <Typography variant="caption" sx={{ mt: 1, color: '#888', textAlign: 'center' }}>
-                        Available: 2013-01-01 to 2016-12-31
-                    </Typography>
+                    {loadingMetadata ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+                            <CircularProgress size={16} sx={{ color: '#888' }} />
+                        </Box>
+                    ) : (
+                        <Typography 
+                            variant="caption" 
+                            sx={{ 
+                                mt: 1, 
+                                color: error && error.includes('must be between') ? '#f44336' : '#888', 
+                                textAlign: 'center', 
+                                display: 'block',
+                                transition: 'color 0.3s ease'
+                            }}
+                        >
+                            {dateRange ? `Available: ${dateRange.min} to ${dateRange.max}` : 'Loading date range...'}
+                        </Typography>
+                    )}
                 </Stack>
             </Box>
         </LocalizationProvider>

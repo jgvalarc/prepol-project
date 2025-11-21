@@ -107,7 +107,7 @@ export default function CrimeMap({ predictionData, loading, error }) {
         sx={{
           position: 'absolute',
           bottom: 20,
-          left: 20,
+          right: 20,
           zIndex: 1000,
           backgroundColor: 'rgba(0, 0, 0, 0.8)',
           color: 'white',

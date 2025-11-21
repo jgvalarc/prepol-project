@@ -1,190 +1,261 @@
-# PrePol Project - AI Agent Instructions
+# PrePol - AI Coding Assistant Instructions
 
-## Project Overview
-PrePol is a **predictive policing system** using machine learning to estimate crime probability across spatially discretized areas (H3 hexagons) over time. The core workflow converts raw Brazilian police reports (RDO files) into spatio-temporal crime forecasts using RandomForest regression.
+PrePol is a **predictive policing system** using RandomForest ML to forecast crime probabilities in H3 hexagonal cells. Three-tier architecture: Jupyter notebooks (ML pipeline) → Flask API (predictions) → React frontend (visualization).
 
-**Key Insight**: Crime is not random - it follows spatio-temporal patterns. PrePol captures these through H3 spatial discretization + temporal aggregation + lag features.
-
-## Architecture & Data Flow
+## System Architecture & Data Flow
 
 ```
-RDO CSVs (2010-2017) → Analysis&Treatment.ipynb → rdo_optimized.csv
-                                                          ↓
-                                            H3Discretization.ipynb
-                                                          ↓
-                                     PrePol_panel_export.parquet
-                                     (cell × time_period × features)
-                                                          ↓
-                                            ModelTraining.ipynb
-                                                          ↓
-                                     rf_crime_model_*.joblib + metadata
-                                                          ↓
-                                            ModelUsage.ipynb → predictions
+ML Pipeline (Jupyter):           Production Stack:
+RDO CSVs → H3 cells              React (Vite) ←→ Flask API ←→ MongoDB Atlas
+         → Panel data                      ↓              ↓
+         → RandomForest                 Vercel        Render (512MB)
+         → Model (.joblib)
 ```
 
-### Core Components
-- **`prepol/`**: Shared utilities module
-  - `config.py`: Paths, column names, H3 resolution (9), time frequency ('D'=daily)
-  - `helpers.py`: H3 wrappers, datetime parsing, CSV loading with normalization
-- **`notebooks/`**: Jupyter-based pipeline (execute in order)
-- **`model/`**: Trained RandomForest artifacts (joblib + JSON metadata)
-- **Data directories** (gitignored):
-  - `prepol_data/raw/`: RDO_1.csv, RDO_2.csv, RDO_3.csv
-  - `prepol_data/clean/`: Cleaned/optimized datasets
-  - `prepol_out/`: Panel data, predictions, models
+**Critical separation**: Notebooks train models offline; backend serves predictions using pre-trained model. Never mix training code with API code.
 
 ## Critical Patterns & Conventions
 
-### 1. H3 Spatial Discretization
-- **Resolution 9** (~0.1 km² hexagons) defined in `config.H3_RES`
-- Use `helpers.to_h3(lat, lon, res)` - handles multiple h3 library versions (geo_to_h3 vs latlng_to_cell)
-- Neighbor features via `helpers.h3_neighbors(cell, k=1)` for spatial autocorrelation
+### 1. Data Source Toggle (CRITICAL)
+**`api/server.py` line ~30**: `USE_MONGODB = True/False` switches data source:
+- **MongoDB mode** (`True`): Queries MongoDB Atlas dynamically, lazy-loads date ranges. Required for production (Render = 512MB RAM).
+- **Parquet mode** (`False`): Loads full panel into memory (~2GB). Use only for local development.
 
-### 2. Column Normalization
-**Always** uppercase and strip column names:
+When editing predictions: MongoDB uses `get_panel_data_mongodb(start, end)`; parquet filters `df_panel` in memory.
+
+### 2. H3 Spatial System
+- **Resolution 9** (~0.1 km²) in `prepol/config.py:H3_RES`. Use `prepol/helpers.py` wrappers:
+  ```python
+  to_h3(lat, lon, res)        # Handles h3 v3/v4 API differences
+  h3_neighbors(cell, k=1)     # K-ring for spatial features
+  h3_to_boundary(cell)        # → polygon coords for GeoJSON
+  ```
+- Why wrappers: h3 library changed API (geo_to_h3 → latlng_to_cell). Helpers ensure compatibility.
+
+### 3. Column Normalization (Mandatory)
+**Always** call first on RDO data:
 ```python
-df = helpers.normalize_df_columns_to_upper(df)
+df = helpers.normalize_df_columns_to_upper(df)  # Strip + uppercase
 ```
-Canonical columns: `LATITUDE`, `LONGITUDE`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA_BO`
+Canonical: `LATITUDE`, `LONGITUDE`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA_BO`. Code breaks without this.
 
-### 3. DateTime Handling
-Combine date + time columns with timezone awareness:
+### 4. Probability Calculation
+Backend converts daily crime counts using **Poisson distribution**:
 ```python
-time_delta = helpers._parse_time_to_timedelta(df[config.COL_TIME])
-df['datetime'] = helpers._combine_date_time(
-    df[config.COL_DATETIME], time_delta, tz=config.DEFAULT_TZ
-)
+# api/server.py:count_to_probability()
+def count_to_probability(daily_avg_count):
+    """P(≥1 crime on a day) = 1 - e^(-λ)"""
+    return 1 - np.exp(-daily_avg_count)
 ```
-Default timezone: `America/Recife`
+Not sigmoid! This is scientifically correct for count data. Frontend displays as %.
 
-### 4. Panel Data Structure
-Complete spatio-temporal grid (all H3 cells × all time periods):
-- **Zero-filling**: Missing cell-period combinations = 0 crimes (not NaN)
-- **Lag features**: `y_lag_1`, `y_lag_2`, `y_lag_3` (temporal)
-- **Rolling averages**: `y_rol_3`, `y_rol_7` (smoothed history)
-- **Spatial neighbors**: `y_lag_1_vizinhos` (neighboring cells' crime counts)
-- **Target variable**: `y` (crime count), `y_norm` (z-score normalized per cell)
-
-### 5. Model Training
-- **Temporal split**: Train on early periods, test on later (no shuffle!)
-- **Features**: All lag/rolling/neighbor features + `time_period` (ordinal)
-- **NaN handling**: Fill with 0 (typical for panel data with zero-inflated counts)
-- **Export**: Model as `.joblib`, metadata as `.json` with timestamp suffix
-
-### 6. File I/O Best Practices
-- CSV engine: Use `helpers.choose_csv_engine()` → prefers pyarrow, fallback to python
-- Parquet preferred for panel data (preserves dtypes)
-- CSV separator: `;` (semicolon) for exports
-- Timestamps in filenames: `%Y%m%d_%H%M%S` format
-
-### 7. Probability Conversion (Predictions)
-Convert predicted crime counts to probabilities using sigmoid:
-```python
-def count_to_probability(count, k=0.5):
-    """Sigmoid: higher counts → higher probability (0-1 range)
-    k controls sensitivity (0.5 default for counts 0-5)"""
-    return 1 / (1 + np.exp(-k * count))
-
-df['crime_probability'] = df['y_pred'].apply(lambda x: count_to_probability(x, k=0.5))
+### 5. MongoDB Schema (Production)
+Collection: `prepol_db.panel_data`
+```javascript
+{
+  h3_cell: "89a6c462c3fffff",
+  date: ISODate("2016-12-01"),
+  y: 2,  // Actual crime count
+  features: {
+    y_norm: 0.5, y_lag_1: 1, y_lag_2: 0, y_lag_3: 1,
+    y_rol_3: 0.67, y_rol_7: 0.71, y_lag_1_vizinhos: 3
+  },
+  coords: {lat: -8.05, lon: -34.9},
+  time_period: 736329  // Period.ordinal for sklearn
+}
 ```
-Alternative: Normalize by max: `df['probability'] = df['y_pred'] / df['y_pred'].max()`  
-Use sigmoid for interpretable probabilities; normalize for relative comparison.
+**Indexes**: Compound `(h3_cell, date)` + single `date`. Query <500ms depends on these.
+
+### 6. Temporal Integrity
+- **No shuffle** in train/test splits—breaks temporal dependencies
+- **Period serialization**: Convert `pd.Period` to `.ordinal` (int) before MongoDB/sklearn
+- **Lag features**: First N periods per cell have NaN → `fillna(0)` before prediction
+- **Date range limits**: Frontend capped at 31 days to prevent OOM on Render
+
+### 7. Panel Data Structure
+Complete spatio-temporal grid (all cells × all periods):
+- **Zero-inflation**: Missing cell-period = 0 crimes (valid data, not NaN)
+- **Features**: `y_norm`, `y_lag_1/2/3`, `y_rol_3/7`, `y_lag_1_vizinhos`, `time_period`
+- **Target**: `y` (count), converted to probability in predictions
+- Created in `H3Discretization.ipynb` using neighbor lookups + rolling windows
 
 ## Development Workflows
 
 ### Environment Setup
 ```powershell
-# Activate venv (PowerShell)
+# PowerShell (Windows)
 .\venv\Scripts\Activate.ps1
-
-# Install dependencies (add to requirements.txt if missing)
-pip install pandas numpy h3 scikit-learn joblib geopandas folium pyarrow
+pip install -r requirements.txt        # Jupyter dependencies
+pip install -r api/requirements.txt    # Flask + ML stack
 ```
 
+**Python version constraint**: Must use **Python 3.11** for Render. scikit-learn 1.3.0 incompatible with 3.13 (Cython errors).
+
 ### Notebook Execution Order
-1. **Analysis&Treatment.ipynb** - Clean raw RDO files → `rdo_optimized.csv`
-2. **H3Discretization.ipynb** - Spatial aggregation → `PrePol_panel_export.parquet`
-3. **ModelTraining.ipynb** - Train RandomForest → `rf_crime_model_*.joblib`
-4. **ModelUsage.ipynb** - Load model, make predictions → `prepol_predictions_*.csv`
-
-Alternative: **PrePolFullPipeline.ipynb** - End-to-end in single notebook (longer, harder to debug)
-
-**Important**: Each notebook expects to be run from the `notebooks/` directory and uses:
+Each notebook expects `notebooks/` as cwd:
 ```python
 project_root = Path.cwd().parent if Path.cwd().name == 'notebooks' else Path.cwd()
 sys.path.insert(0, str(project_root))
 ```
-This pattern ensures `prepol` module imports work correctly.
 
-### Adding Features
-When adding new features to the panel:
-1. Compute in `H3Discretization.ipynb` after basic aggregation
-2. Add to `export_cols` list before CSV/Parquet export
-3. Update `ModelTraining.ipynb` to include in `feature_cols`
-4. Retrain model with new features
+1. **Analysis&Treatment.ipynb** — Clean RDO CSVs → `rdo_optimized.csv`
+2. **H3Discretization.ipynb** — Spatial aggregation → `PrePol_panel_export.parquet`
+3. **ModelTraining.ipynb** — Train RandomForest → `rf_crime_model_*.joblib`
+4. **ModelUsage.ipynb** — Predictions + Folium maps
 
-### Debugging Missing Data
-- Check for `(0, 0)` or NaN coordinates → filtered out pre-H3
-- H3 conversion failures → logged but dropped (see "Failed conversions" output)
-- Missing lag features → Expected for first N periods per cell (fillna(0))
+Alternative: **PrePolFullPipeline.ipynb** (end-to-end, harder to debug).
 
-## Project-Specific Notes
+### Running Backend Locally
+```powershell
+# Terminal 1: Backend (port 5000)
+cd api
+python server.py
 
-### Why H3 Resolution 9?
-Balances spatial granularity (~0.1 km²) with computational feasibility. For ~1 km² cells, use resolution 6. Changing requires full re-run from H3Discretization onward.
+# Terminal 2: Frontend (port 5173)
+cd front
+npm install  # First time only
+npm run dev
+```
 
-### Why Weekly Aggregation?
-`TIME_FREQ = 'D'` (daily) but actual aggregation is configurable. Weekly (`'W'`) provides:
-- Enough observations per cell-period for modeling
-- Reduces zero-inflation (more cells have ≥1 crime per week)
-- Captures weekly crime cycles
+**Testing data source**:
+- Local: Set `USE_MONGODB = False` in `server.py`, ensure parquet in `panels/`
+- Production-like: Set `USE_MONGODB = True`, export `$env:MONGODB_URI = "..."`
 
-### Performance Optimization
-- **Neighbor calculation**: Pre-build neighbor map as dict, use lookup instead of repeated h3.k_ring calls
-- **Crime lookup**: Convert to dict `{(cell, period): count}` for O(1) access
-- **Folium maps**: Use GeoJSON FeatureCollection instead of iterating individual polygons (10x+ faster)
-  - Vectorize color/boundary calculations before loop
-  - Build single GeoJSON object with all features
-  - Use `folium.GeoJson()` instead of multiple `folium.Polygon()` calls
-  - Example in `ModelUsage.ipynb` cell starting "Create map with predicted crime probabilities (OPTIMIZED)"
-- **Parquet vs CSV**: Parquet loads ~5-10x faster for panel data (preserves dtypes, compression)
+Health check: `http://localhost:5000/api/health` (shows data source + status)
 
-### Model Evaluation
-Current metrics (from metadata):
-- Test R²: 0.91 (excellent)
-- Test MAE: 0.018 crimes/period
-- Top feature: `y_norm` (84% importance) - normalized historical crime
+### MongoDB Migration (One-time Setup)
+```powershell
+# 1. Create reduced panel (Q4 2016 for 512MB RAM)
+python scripts/create_reduced_panel.py
+
+# 2. Migrate to MongoDB Atlas
+python scripts/migrate_to_mongodb.py
+# (Prompts for URI, inserts ~911K docs, creates indexes)
+
+# 3. Verify health (8 diagnostic tests)
+$env:MONGODB_URI = "mongodb+srv://..."
+python check_mongodb_health.py
+```
+
+**After migration**: Update `api/server.py` to `USE_MONGODB = True` and deploy.
+
+### Deployment (Vercel + Render)
+See `DEPLOYMENT.md` for full guide. Key points:
+
+**Render (Backend)**:
+- Build: `pip install -r api/requirements.txt`
+- Start: `gunicorn --chdir api wsgi:app --timeout 180`
+- Env vars: `PYTHON_VERSION=3.11.0`, `MONGODB_URI=mongodb+srv://...`
+- Free tier: 512MB RAM, spins down after 15min idle
+
+**Vercel (Frontend)**:
+- Root: `front/`, Framework: Vite
+- Build: `npm run build`, Output: `dist/`
+- Env var: `VITE_API_URL=https://prepol-api.onrender.com`
+
+## Performance Patterns
+
+### Folium Map Optimization (10x speedup)
+**Don’t** iterate polygons:
+```python
+# ❌ Slow (individual features)
+for cell in cells:
+    boundary = h3_to_boundary(cell)
+    folium.Polygon(boundary, color=...).add_to(map)
+```
+
+**Do** use GeoJSON FeatureCollection:
+```python
+# ✅ Fast (single GeoJSON object)
+features = [
+    {
+        'type': 'Feature',
+        'geometry': {'type': 'Polygon', 'coordinates': [...]},
+        'properties': {'probability': 0.75, ...}
+    }
+    for cell in cells
+]
+geojson = {'type': 'FeatureCollection', 'features': features}
+folium.GeoJson(geojson, style_function=...).add_to(map)
+```
+See `ModelUsage.ipynb` "OPTIMIZED" cell for implementation.
+
+### Data I/O
+- **Parquet over CSV**: 5-10x faster load, preserves dtypes, compression
+- **CSV engine**: `helpers.choose_csv_engine()` → pyarrow (fast) or python (fallback)
+- **Timestamps**: `%Y%m%d_%H%M%S` format for model/prediction filenames
+
+### Neighbor Pre-computation
+**Don’t** call `h3_neighbors()` in loops:
+```python
+# ❌ O(n) lookups per cell
+for cell in cells:
+    neighbors = h3_neighbors(cell, k=1)
+```
+
+**Do** build lookup dict:
+```python
+# ✅ O(1) lookups
+neighbor_map = {cell: set(h3_neighbors(cell, k=1)) for cell in unique_cells}
+for cell in cells:
+    neighbors = neighbor_map[cell]
+```
 
 ## Common Pitfalls
-❌ Modifying column names after normalization - always use uppercase constants  
-❌ Shuffling time series data - breaks temporal dependencies  
-❌ Forgetting to localize datetimes to `America/Recife` timezone  
-❌ Assuming NaN = no data (in panel, 0 crimes ≠ NaN, both are valid)  
-❌ Using raw lat/lon after H3 discretization (spatial unit is H3 cell, not point)
 
-## Key Files to Reference
-- `prepol/config.py` - All configurable parameters
-- `prepol/helpers.py` - Reusable functions (start here for utilities)
-- `notebooks/H3Discretization.ipynb` - Panel structure definition (lines 421-513: Folium map visualization)
-- `notebooks/ModelUsage.ipynb` - Sigmoid probability conversion, GeoJSON optimization
-- `model/rf_crime_model_meta_*.json` - Model performance baseline
-- `PrePol&DatasetReport.md` - Original data documentation (Portuguese)
+❌ **Forgetting normalization** → `df = helpers.normalize_df_columns_to_upper(df)` is mandatory  
+❌ **Shuffling time series** → Breaks temporal dependencies (use `shuffle=False`)  
+❌ **Wrong timezone** → Must use `America/Recife` for RDO data  
+❌ **Deploying parquet mode** → Exceeds Render 512MB limit (use MongoDB)  
+❌ **Python 3.13** → scikit-learn 1.3.0 build fails (use 3.11)  
+❌ **Raw h3 calls** → API differences break across versions (use helpers)  
+❌ **Individual Folium polygons** → 10x slower than GeoJSON (vectorize)  
+❌ **Assuming NaN = missing** → In panel data, 0 crimes ≠ NaN (both valid)
 
-## Helper Functions Quick Reference
-Common utilities from `prepol.helpers`:
-- `normalize_df_columns_to_upper(df)` - **Always call first** on new DataFrames
-- `carregar_dataset(path, nome, nrows=None)` - Load CSV with normalization
-- `to_h3(lat, lon, res)` - Convert coordinates to H3 cell (handles library versions)
-- `h3_neighbors(cell, k=1)` - Get k-ring neighbors for spatial features
-- `h3_to_geo(cell)` - H3 cell to (lat, lon) centroid
-- `h3_to_boundary(cell)` - H3 cell to polygon boundary coords
-- `choose_csv_engine()` - Auto-select best CSV engine (pyarrow > python)
-- `save_parquet_and_csv(df, parquet_path, csv_path)` - Dual export convenience
+## Key Files Reference
+
+- **`prepol/config.py`** — All constants (H3_RES=9, TIME_FREQ='D', paths)
+- **`prepol/helpers.py`** — Reusable utilities (h3, datetime, CSV loading)
+- **`api/server.py`** — Flask endpoints (`/api/health`, `/api/metadata`, `/api/predict`)
+- **`front/src/CrimeMap.jsx`** — Leaflet map with GeoJSON rendering + stats panel
+- **`model/rf_crime_model_meta_*.json`** — Model performance (R²=0.91)
+- **`scripts/migrate_to_mongodb.py`** — Parquet → MongoDB migration
+- **`check_mongodb_health.py`** — 8-test diagnostic suite
 
 ## Testing & Validation
-No formal test suite yet. Validation approach:
-1. Check panel completeness: `len(cells) × len(periods) == len(df_panel)`
-2. Verify no NaN in final feature matrix after fillna
-3. Temporal split sanity: `train_end < test_start`
-4. Map visualization: Use Folium in H3Discretization to visually inspect cell boundaries
-5. Model metrics: R² > 0.85 on test set expected
+
+No formal test suite. Validation checklist:
+
+**Notebooks**:
+1. Panel completeness: `len(unique_cells) × len(periods) == len(df_panel)`
+2. No NaN in features after `fillna(0)`
+3. Temporal split: `train_end < test_start`
+4. Visual inspection: Folium maps in `H3Discretization.ipynb`
+
+**Backend**:
+1. Health check: `/api/health` shows `model_loaded: true`
+2. Date range: `/api/metadata` returns correct min/max
+3. Prediction: POST to `/api/predict` with 7-day range
+4. CORS: Frontend can fetch from different origin
+
+**MongoDB**:
+```powershell
+python check_mongodb_health.py  # 8 diagnostic tests
+```
+Checks: connection, schema, indexes, query <500ms, integrity, model compat.
+
+## Model Information
+
+**Current Performance** (from metadata):
+- Test R²: **0.91** (excellent fit)
+- Test MAE: **0.018** crimes/period
+- Top feature: `y_norm` (84% importance) — normalized historical crime
+- Training: 2013-2016 RDO, ~1M records, ~12K H3 cells
+
+**When to retrain**:
+- New RDO data (2017+)
+- Changing H3 resolution (requires full pipeline)
+- Adding features (weather, demographics)
+- Performance degrades (R² < 0.85)
+
+Retrain by re-running notebooks 2-3 in sequence.

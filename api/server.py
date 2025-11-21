@@ -11,6 +11,7 @@ import joblib
 import json
 from datetime import datetime
 import sys
+import os
 
 # Add prepol module to path
 project_root = Path(__file__).resolve().parents[1]
@@ -20,7 +21,15 @@ import prepol.config as config
 import prepol.helpers as helpers
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React dev server
+
+# Configure CORS - allow all origins for prototype (restrict in production)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",  # In production, replace with your Vercel domain
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 # Global variables for model and data
 rf_model = None
@@ -317,7 +326,14 @@ if __name__ == '__main__':
         print(f"Metadata: http://localhost:5000/api/metadata")
         print("="*60 + "\n")
         
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        # Get port from environment variable (Render uses PORT env var)
+        port = int(os.environ.get('PORT', 5000))
+        # Get host - use 0.0.0.0 for production, allows external connections
+        host = '0.0.0.0'
+        # Disable debug mode in production
+        debug_mode = os.environ.get('FLASK_ENV') == 'development'
+        
+        app.run(debug=debug_mode, host=host, port=port)
         
     except Exception as e:
         print(f"\n❌ Failed to start server: {str(e)}")

@@ -49,9 +49,19 @@ def load_model():
     global rf_model, metadata
     
     model_dir = project_root / "model"
-    model_files = sorted(model_dir.glob(f"{config.MODEL_PREFIX}_*.joblib"))
+    
+    print(f"Looking for model in: {model_dir}")
+    print(f"Model directory exists: {model_dir.exists()}")
+    
+    if model_dir.exists():
+        model_files = sorted(model_dir.glob(f"{config.MODEL_PREFIX}_*.joblib"))
+        print(f"Found {len(model_files)} model files")
+    else:
+        print(f"❌ Model directory not found: {model_dir}")
+        raise FileNotFoundError(f"Model directory not found: {model_dir}")
     
     if not model_files:
+        print(f"❌ No model found matching pattern: {config.MODEL_PREFIX}_*.joblib")
         raise FileNotFoundError(f"No model found in {model_dir}")
     
     model_path = model_files[-1]
@@ -59,8 +69,13 @@ def load_model():
         model_path.stem.replace(config.MODEL_PREFIX, f"{config.MODEL_PREFIX}_meta") + ".json"
     )
     
-    print(f"Loading model: {model_path.name}")
+    print(f"Loading model: {model_path}")
+    print(f"Model file exists: {model_path.exists()}")
+    
     rf_model = joblib.load(model_path)
+    
+    print(f"Loading metadata: {meta_path}")
+    print(f"Metadata file exists: {meta_path.exists()}")
     
     with open(meta_path, 'r') as f:
         metadata = json.load(f)
@@ -73,7 +88,17 @@ def load_panel_data():
     
     panel_path = project_root / "notebooks" / "prepol_out" / "PrePol_panel_export.parquet"
     
+    print(f"Looking for panel data at: {panel_path}")
+    print(f"Panel file exists: {panel_path.exists()}")
+    print(f"Parent directory exists: {panel_path.parent.exists()}")
+    
+    if panel_path.parent.exists():
+        print(f"Files in {panel_path.parent}:")
+        for f in panel_path.parent.iterdir():
+            print(f"  - {f.name}")
+    
     if not panel_path.exists():
+        print(f"❌ Panel data not found: {panel_path}")
         raise FileNotFoundError(f"Panel data not found: {panel_path}")
     
     print(f"Loading panel data from {panel_path.name}...")
@@ -312,6 +337,12 @@ if __name__ == '__main__':
     except ImportError:
         print("  • pyarrow: Not installed")
     
+    print()
+    
+    # Print working directory and project structure
+    print(f"Working directory: {Path.cwd()}")
+    print(f"Project root: {project_root}")
+    print(f"Project root exists: {project_root.exists()}")
     print()
     
     try:

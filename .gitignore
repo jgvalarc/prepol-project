@@ -8,7 +8,7 @@ __pycache__/
 
 # Prepol stuff
 prepol_data/
-notebooks/
+# notebooks/
 prepol_out/
 D:\BackupSupremo\Work\prepol-project\panels\PrePol_panel_export.parquet
 

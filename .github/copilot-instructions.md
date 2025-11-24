@@ -18,26 +18,33 @@ RDO CSVs → H3 cells              React (Vite) ←→ Flask API ←→ MongoDB 
 
 ### 1. Data Source Toggle (CRITICAL)
 **`api/server.py` line ~30**: `USE_MONGODB = True/False` switches data source:
-- **MongoDB mode** (`True`): Queries MongoDB Atlas dynamically, lazy-loads date ranges. Required for production (Render = 512MB RAM).
-- **Parquet mode** (`False`): Loads full panel into memory (~2GB). Use only for local development.
+- **MongoDB mode** (`True`): Queries MongoDB Atlas dynamically, lazy-loads date ranges. Required for production (Render = 512MB RAM). Requires `MONGODB_URI` env var.
+- **Parquet mode** (`False`): Loads full panel into memory (~2GB). Use only for local development with `panels/PrePol_panel_2013-2016.parquet`.
 
-When editing predictions: MongoDB uses `get_panel_data_mongodb(start, end)`; parquet filters `df_panel` in memory.
+When editing predictions: MongoDB uses `get_panel_data_mongodb(start, end)` (queries on-demand); parquet filters `df_panel` in memory (pre-loaded at startup).
 
 ### 2. H3 Spatial System
-- **Resolution 9** (~0.1 km²) in `prepol/config.py:H3_RES`. Use `prepol/helpers.py` wrappers:
+- **Resolution 9** (~0.1 km²) defined in `prepol/config.py:H3_RES` (note: config shows 10, but system uses 9 in practice - verify before changes).
+- Use `prepol/helpers.py` wrappers exclusively:
   ```python
-  to_h3(lat, lon, res)        # Handles h3 v3/v4 API differences
-  h3_neighbors(cell, k=1)     # K-ring for spatial features
-  h3_to_boundary(cell)        # → polygon coords for GeoJSON
+  to_h3(lat, lon, res)        # Handles h3 v3/v4 API differences (geo_to_h3 vs latlng_to_cell)
+  h3_neighbors(cell, k=1)     # K-ring for spatial features (k_ring vs grid_disk)
+  h3_to_geo(cell)             # Cell → (lat, lon) centroid
+  h3_to_boundary(cell)        # → list[(lat, lon)] for GeoJSON polygons
   ```
-- Why wrappers: h3 library changed API (geo_to_h3 → latlng_to_cell). Helpers ensure compatibility.
+- **Never call h3 library directly** - API changed between versions (v3: `geo_to_h3`, v4: `latlng_to_cell`). Helpers ensure compatibility.
 
 ### 3. Column Normalization (Mandatory)
-**Always** call first on RDO data:
+**Always** call first on RDO data - system crashes without this:
 ```python
-df = helpers.normalize_df_columns_to_upper(df)  # Strip + uppercase
+df = helpers.normalize_df_columns_to_upper(df)  # Strip whitespace + uppercase
 ```
-Canonical: `LATITUDE`, `LONGITUDE`, `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA_BO`. Code breaks without this.
+Canonical columns (must match exactly):
+- `LATITUDE`, `LONGITUDE` — Coordinates (converted from comma decimals in raw data)
+- `DATA_OCORRENCIA_BO`, `HORA_OCORRENCIA_BO` — Date/time (parsed to `America/Recife` timezone)
+- `RUBRICA`, `DESCR_TIPO_BO` — Crime classification
+
+Normalization handles: whitespace stripping, comma→dot decimal conversion, inconsistent casing from RDO exports.
 
 ### 4. Probability Calculation
 Backend converts daily crime counts using **Poisson distribution**:
@@ -74,10 +81,11 @@ Collection: `prepol_db.panel_data`
 
 ### 7. Panel Data Structure
 Complete spatio-temporal grid (all cells × all periods):
-- **Zero-inflation**: Missing cell-period = 0 crimes (valid data, not NaN)
+- **Zero-inflation**: Missing cell-period = 0 crimes (valid data, not NaN). System creates complete grid: `len(unique_cells) × len(periods) == len(df_panel)` must be true.
 - **Features**: `y_norm`, `y_lag_1/2/3`, `y_rol_3/7`, `y_lag_1_vizinhos`, `time_period`
 - **Target**: `y` (count), converted to probability in predictions
 - Created in `H3Discretization.ipynb` using neighbor lookups + rolling windows
+- **Validation**: First lag periods per cell have NaN by design → `fillna(0)` before model training/prediction
 
 ## Development Workflows
 
@@ -90,6 +98,11 @@ pip install -r api/requirements.txt    # Flask + ML stack
 ```
 
 **Python version constraint**: Must use **Python 3.11** for Render. scikit-learn 1.3.0 incompatible with 3.13 (Cython errors).
+
+**Dependency notes**:
+- `api/requirements.txt`: Production dependencies (pinned sklearn==1.3.0, numpy<2.0)
+- `requirements.txt`: Development/notebook dependencies (flask not included)
+- Both need `pyarrow` for parquet I/O, `h3` for spatial operations
 
 ### Notebook Execution Order
 Each notebook expects `notebooks/` as cwd:
@@ -104,6 +117,11 @@ sys.path.insert(0, str(project_root))
 4. **ModelUsage.ipynb** — Predictions + Folium maps
 
 Alternative: **PrePolFullPipeline.ipynb** (end-to-end, harder to debug).
+
+**Notebook best practices**:
+- Run cells sequentially (execution count shows order)
+- Validate panel completeness: `len(unique_cells) × len(periods) == len(df_panel)`
+- Visual sanity checks: Use Folium maps in `H3Discretization.ipynb` to verify spatial aggregation
 
 ### Running Backend Locally
 ```powershell
@@ -122,6 +140,12 @@ npm run dev
 - Production-like: Set `USE_MONGODB = True`, export `$env:MONGODB_URI = "..."`
 
 Health check: `http://localhost:5000/api/health` (shows data source + status)
+
+**Common startup issues**:
+- "Model not found": Verify `model/rf_crime_model_*.joblib` exists
+- "Panel not found": Check `panels/PrePol_panel_2013-2016.parquet` for parquet mode
+- "pymongo not installed": Install with `pip install pymongo` for MongoDB mode
+- Port 5000 in use: Kill process or use `$env:PORT = "5001"`
 
 ### MongoDB Migration (One-time Setup)
 ```powershell
@@ -210,7 +234,9 @@ for cell in cells:
 ❌ **Python 3.13** → scikit-learn 1.3.0 build fails (use 3.11)  
 ❌ **Raw h3 calls** → API differences break across versions (use helpers)  
 ❌ **Individual Folium polygons** → 10x slower than GeoJSON (vectorize)  
-❌ **Assuming NaN = missing** → In panel data, 0 crimes ≠ NaN (both valid)
+❌ **Assuming NaN = missing** → In panel data, 0 crimes ≠ NaN (both valid)  
+❌ **Missing venv activation** → Import errors, wrong Python version (activate `.\venv\Scripts\Activate.ps1`)  
+❌ **Running notebooks from wrong directory** → Path errors (must run from `notebooks/` or handle `project_root`)
 
 ## Key Files Reference
 
@@ -221,6 +247,24 @@ for cell in cells:
 - **`model/rf_crime_model_meta_*.json`** — Model performance (R²=0.91)
 - **`scripts/migrate_to_mongodb.py`** — Parquet → MongoDB migration
 - **`check_mongodb_health.py`** — 8-test diagnostic suite
+- **`front/vite.config.js`** — Vite build config (proxy settings for dev)
+- **`api/wsgi.py`** — Gunicorn entry point (imports app from server.py)
+
+## Frontend Architecture
+
+**Tech Stack**: React 18 + Vite + Material-UI + react-leaflet  
+**Key patterns**:
+- **API URL**: Read from `import.meta.env.VITE_API_URL` (build-time substitution)
+- **Development**: Runs on port 5173, proxies API calls to localhost:5000
+- **Production**: Uses `VITE_API_URL` env var on Vercel pointing to Render backend
+- **Map rendering**: Uses GeoJSON layer for performance (not individual markers)
+- **Color scheme**: Red gradient based on probability (light red = low, dark red = high)
+
+**Environment variables**:
+- `.env.development`: `VITE_API_URL=http://localhost:5000`
+- `.env.production`: `VITE_API_URL=https://prepol-api.onrender.com`
+
+**Build command**: `npm run build` → outputs to `front/dist/`
 
 ## Testing & Validation
 
@@ -243,6 +287,14 @@ No formal test suite. Validation checklist:
 python check_mongodb_health.py  # 8 diagnostic tests
 ```
 Checks: connection, schema, indexes, query <500ms, integrity, model compat.
+
+**Frontend**:
+```powershell
+cd front
+npm run build  # Test production build
+npm run preview  # Preview production build locally
+```
+Check browser console for errors, verify map renders correctly.
 
 ## Model Information
 

@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Box, GlobalStyles } from "@mui/material";
-import MapAppBar from "./MapAppBar.jsx";
 import HomeAppBar from "./HomeAppBar.jsx";
 import CrimeMap from "./CrimeMap.jsx";
 
@@ -8,44 +7,40 @@ import CrimeMap from "./CrimeMap.jsx";
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function PlaceholderImage() {
-  const [predictionData, setPredictionData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [forecastData, setForecastData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const handleApplyFilters = async (filters) => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      console.log('Fetching predictions for:', filters);
+  // Load forecast data on component mount
+  useEffect(() => {
+    const loadForecastData = async () => {
+      setLoading(true);
+      setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/api/predict`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          start_date: filters.startDate,
-          end_date: filters.endDate
-        })
-      });
+      try {
+        console.log('Loading pre-computed forecast data...');
+        
+        const response = await fetch(`${API_BASE_URL}/api/forecast`);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Server error: ${response.status}`);
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Server error: ${response.status}`);
+        const data = await response.json();
+        console.log('Received forecast data:', data.metadata);
+        setForecastData(data);
+        
+      } catch (err) {
+        console.error('Forecast loading error:', err);
+        setError(err.message || 'Failed to load forecast data. Make sure the API server is running.');
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const data = await response.json();
-      console.log('Received prediction data:', data.summary);
-      setPredictionData(data);
-      
-    } catch (err) {
-      console.error('Prediction error:', err);
-      setError(err.message || 'Failed to fetch predictions. Make sure the API server is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    loadForecastData();
+  }, []);
 
   return (
     <>
@@ -74,13 +69,10 @@ export default function PlaceholderImage() {
       >
         {/* Crime Map Component */}
         <CrimeMap 
-          predictionData={predictionData} 
+          forecastData={forecastData} 
           loading={loading} 
           error={error}
         />
-        
-        {/* Map Controls Overlay */}
-        <MapAppBar onApplyFilters={handleApplyFilters} />
       </Box>
     </>
   );

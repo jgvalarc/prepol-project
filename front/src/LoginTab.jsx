@@ -6,14 +6,22 @@ import {
   Typography,
   Paper,
   InputAdornment,
+  Divider,
 } from "@mui/material";
 
 import { EmailOutlined, LockOutlined } from "@mui/icons-material";
 import { Link } from "react-router-dom";
-import { useTheme } from "@mui/material/styles";
 
 export default function LoginTab() {
-  const theme = useTheme();
+  // Cores extraídas da sua paleta antiga para referência:
+  const colors = {
+    primaryMain: "#a10000ff", // Vermelho principal
+    primaryDark: "#650000",   // Vermelho escuro (botão)
+    bgPaper: "#111111",       // Fundo escuro
+    textPrimary: "#ffffff",   // Texto branco
+    textSecondary: "rgba(255, 255, 255, 0.7)", // Texto cinza claro
+    divider: "#3c3c3c",
+  };
 
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
@@ -22,24 +30,24 @@ export default function LoginTab() {
 
   const inputStyle = {
     "& .MuiInputLabel-root": {
-      color: theme.palette.text.secondary,
+      color: colors.textSecondary,
     },
     "& .MuiInputLabel-root.Mui-focused": {
-      color: theme.palette.primary.main,
+      color: colors.textSecondary,
     },
     "& .MuiOutlinedInput-root": {
       "& fieldset": {
-        borderColor: theme.palette.divider,
+        borderColor: colors.divider,
       },
       "&:hover fieldset": {
-        borderColor: theme.palette.primary.main,
+        borderColor: colors.primaryMain,
       },
       "&.Mui-focused fieldset": {
-        borderColor: theme.palette.primary.main,
+        borderColor: colors.primaryMain,
       },
     },
     "& .MuiInputBase-input": {
-      color: theme.palette.text.primary,
+      color: colors.textPrimary,
     },
   };
 
@@ -51,7 +59,7 @@ export default function LoginTab() {
         alignItems: "center",
         height: "100vh",
         background: "transparent",
-        color: theme.palette.text.primary,
+        color: colors.textPrimary,
       }}
     >
       <Paper
@@ -61,8 +69,8 @@ export default function LoginTab() {
           borderRadius: 3,
           width: "100%",
           maxWidth: 380,
-          backgroundColor: theme.palette.background.paper,
-          border: `1px solid ${theme.palette.divider}`,
+          backgroundColor: colors.bgPaper,
+          border: `1px solid ${colors.divider}`,
           backdropFilter: "blur(10px)",
           display: "flex",
           flexDirection: "column",
@@ -73,16 +81,14 @@ export default function LoginTab() {
           variant="h5"
           align="center"
           gutterBottom
-          sx={{ color: theme.palette.text.primary, fontWeight: "bold" }}
+          sx={{ color: colors.textPrimary, fontWeight: "bold" }}
         >
           Entrar
         </Typography>
-
-        {/* Linha superior */}
-        <Box
+        <Divider
           sx={{
             width: "85%",
-            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor: colors.divider,
             mt: 1,
             mb: 2,
           }}
@@ -104,7 +110,7 @@ export default function LoginTab() {
             startAdornment:
               emailFocused || email ? (
                 <InputAdornment position="start">
-                  <EmailOutlined sx={{ color: theme.palette.primary.main }} />
+                  <EmailOutlined sx={{ color: colors.primaryMain }} />
                 </InputAdornment>
               ) : null,
           }}
@@ -122,21 +128,19 @@ export default function LoginTab() {
           onFocus={() => setPasswordFocused(true)}
           onBlur={() => setPasswordFocused(false)}
           sx={inputStyle}
-          InputProps={{
+          InputProps={{ 
             startAdornment:
               passwordFocused || password ? (
                 <InputAdornment position="start">
-                  <LockOutlined sx={{ color: theme.palette.primary.main }} />
+                  <LockOutlined sx={{ color: colors.primaryMain }} />
                 </InputAdornment>
               ) : null,
           }}
         />
-
-        {/* Linha inferior */}
-        <Box
+        <Divider
           sx={{
             width: "85%",
-            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor: colors.divider,
             mt: 2,
             mb: 2,
           }}
@@ -147,12 +151,12 @@ export default function LoginTab() {
           variant="contained"
           fullWidth
           component={Link}
-          to="/Map"
+          to="/Home"
           sx={{
             mt: 1,
             width: "85%",
-            backgroundColor: theme.palette.primary.dark,
-            "&:hover": { backgroundColor: theme.palette.primary.dark },
+            backgroundColor: colors.primaryDark,
+            "&:hover": { backgroundColor: colors.primaryDark },
             borderRadius: "10px",
             py: 1.2,
           }}
@@ -160,17 +164,19 @@ export default function LoginTab() {
           Login
         </Button>
 
-        <Box
+        {/* Linha de 50% usando o componente Divider nativo */}
+        <Divider
           sx={{
             width: "50%",
-            borderBottom: `1px solid ${theme.palette.divider}`,
+            backgroundColor: colors.divider,
             mt: 2,
           }}
         />
+        
         <Typography
           variant="body2"
           align="center"
-          sx={{ mt: 2, color: theme.palette.text.secondary, cursor: "pointer" }}
+          sx={{ mt: 2, color: colors.textSecondary, cursor: "pointer" }}
         >
           Problemas ao logar?
         </Typography>

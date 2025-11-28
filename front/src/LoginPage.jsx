@@ -1,6 +1,7 @@
-import { Box, Typography, GlobalStyles, ThemeProvider } from "@mui/material";
+import { Box, Typography, GlobalStyles, } from "@mui/material";
 import LoginTab from './LoginTab.jsx'
-import Palette from "./Palette.jsx"
+import Logo from './assets/Logo.png'
+import PixelBlast from './Components/PixelBlast.jsx';
 
 export default function BackgroundPage() {
   return (
@@ -17,10 +18,14 @@ export default function BackgroundPage() {
         }}
       />
 
-      <Box
+      <Box>
+        <Box
         sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
           width: "100%",
-          height: "100vh",
+          height: "100%",
           backgroundColor: "#0a0a0a",
           backgroundImage: `
             repeating-linear-gradient(
@@ -31,26 +36,44 @@ export default function BackgroundPage() {
               transparent 20px
             )
           `,
-          position: "relative",
+          zIndex: 0,
         }}
       >
-        <ThemeProvider theme={Palette}>
+        <PixelBlast />
+      </Box>
         <LoginTab/>
-        </ThemeProvider>
-        <Typography
-          variant="h5"
+        <Box
           sx={{
             position: "absolute",
             top: 24,
             left: 32,
-            fontWeight: "bold",
-            color: "#ffffffff",
-            letterSpacing: 1.5,
-            fontFamily: "Poppins, sans-serif",
+            display: "flex",
+            alignItems: "center",
           }}
         >
-          PREPOL
-        </Typography>
+          <Box
+            component="img"
+            src={Logo}
+            alt="Logo"
+            sx={{
+              height: 48,
+              width: 48,
+              mr: 0.5,
+            }}
+          />
+
+          <Typography
+            variant="h5"
+            sx={{
+              fontWeight: "bold",
+              color: "#ffffffff",
+              letterSpacing: 1.5,
+              fontFamily: "Poppins, sans-serif",
+            }}
+          >
+            PREPOL
+          </Typography>
+        </Box>
       </Box>
     </>
   );

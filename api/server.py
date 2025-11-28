@@ -1,10 +1,10 @@
 """
 PrePol Flask API Server
-Serves crime probability predictions from trained RandomForest model.
+Serves pre-computed crime probability forecasts from MongoDB.
 
 DATA SOURCE CONFIGURATION:
-- Set USE_MONGODB = True to use MongoDB Atlas (requires MONGODB_URI env var)
-- Set USE_MONGODB = False to use local parquet file (default for local testing)
+- Set USE_MONGODB_FORECAST = True to load forecast from MongoDB Atlas (requires MONGODB_URI env var)
+- Set USE_MONGODB_FORECAST = False to load forecast from local parquet file (for testing)
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -29,9 +29,9 @@ import prepol.config as config
 import prepol.helpers as helpers
 
 # ============================================================================
-# DATA SOURCE CONFIGURATION - Change this to switch between parquet and MongoDB
+# DATA SOURCE CONFIGURATION - Change this to switch between local and MongoDB forecast
 # ============================================================================
-USE_MONGODB = True  # Set to True to use MongoDB, False to use local parquet
+USE_MONGODB_FORECAST = False  # Set to True to load forecast from MongoDB
 # ============================================================================
 
 app = Flask(__name__)
@@ -48,9 +48,9 @@ CORS(app, resources={
 # Global variables for model and data
 rf_model = None
 metadata = None
-df_panel = None  # Used when USE_MONGODB = False
-mongo_client = None  # Used when USE_MONGODB = True
-mongo_collection = None  # Used when USE_MONGODB = True
+df_forecast = None  # Forecast data loaded on startup
+mongo_client = None  # Used when USE_MONGODB_FORECAST = True
+mongo_forecast_collection = None  # Used when USE_MONGODB_FORECAST = True
 
 def count_to_probability(daily_avg_count):
     """Convert daily average crime count to probability using Poisson distribution.
@@ -98,48 +98,68 @@ def load_model():
     
     print(f"✓ Model loaded - Test R²: {metadata['metrics']['test']['r2']:.4f}")
 
-def load_panel_data_parquet():
-    """Load panel data from parquet file (local mode)."""
-    global df_panel
+def load_forecast_data_parquet():
+    """Load forecast data from local parquet file (for testing only)."""
+    global df_forecast
     
-    # Dataset to be used. Change filename as needed. Reminder: Full panel is too large for Render free tier.
-    panel_path = project_root / "panels" / "PrePol_panel_2013-2016.parquet"
+    # Look for latest forecast file
+    forecast_dir = project_root / "panels" / "PrepolForecast_03"
+    forecast_files = sorted(forecast_dir.glob("PrepolForecast_*.parquet"))
     
-    print(f"Loading panel data from PARQUET...")
-    print(f"Looking for panel data at: {panel_path}")
-    print(f"Panel file exists: {panel_path.exists()}")
+    if not forecast_files:
+        raise FileNotFoundError("No forecast files found in panels/ directory")
     
-    if not panel_path.exists():
-        print(f"❌ Panel data not found: {panel_path}")
-        raise FileNotFoundError(f"Panel data not found: {panel_path}")
+    forecast_path = forecast_files[-1]  # Latest forecast
     
-    print(f"Loading panel data from {panel_path.name}...")
-    df_panel = pd.read_parquet(panel_path)
+    print(f"Loading forecast from PARQUET: {forecast_path.name}")
     
-    # Convert Period to string for easier handling
-    if 'time_period' in df_panel.columns:
-        if pd.api.types.is_period_dtype(df_panel['time_period']):
-            df_panel['time_period_str'] = df_panel['time_period'].astype(str)
-        else:
-            df_panel['time_period_str'] = df_panel['time_period']
-    
-    print(f"✓ Parquet panel loaded: {df_panel.shape[0]:,} records")
-    print(f"  Date range: {df_panel['timestamp'].min()} to {df_panel['timestamp'].max()}")
-    print(f"  H3 cells: {df_panel['h3_cell'].nunique():,}")
+    try:
+        df_forecast = pd.read_parquet(forecast_path)
+        print(f"✓ Forecast loaded (raw): {len(df_forecast):,} rows")
 
-def load_panel_data_mongodb():
-    """Connect to MongoDB and set up collection access (MongoDB mode)."""
-    global mongo_client, mongo_collection
+        # Ensure expected columns exist and compute probability if missing
+        if 'crime_probability' not in df_forecast.columns and 'predicted_daily_avg' in df_forecast.columns:
+            print("  Computing crime_probability from predicted_daily_avg (Poisson)")
+            df_forecast['crime_probability'] = df_forecast['predicted_daily_avg'].apply(count_to_probability)
+
+        # Filter out cells with negligible probability (match notebook visualization)
+        if 'crime_probability' in df_forecast.columns:
+            threshold = 0.05  # 5% default filter (notebook uses > 5%)
+            before = len(df_forecast)
+            df_forecast = df_forecast[df_forecast['crime_probability'] > threshold].reset_index(drop=True)
+            after = len(df_forecast)
+            print(f"  Filtered forecast: kept {after:,} of {before:,} rows (crime_probability > {threshold})")
+        else:
+            print("  Warning: 'crime_probability' column missing and could not be computed; no filtering applied")
+
+        # Add coordinates if not present
+        if 'lat' not in df_forecast.columns or 'lon' not in df_forecast.columns:
+            print("  Computing H3 coordinates...")
+            df_forecast['lat'] = df_forecast['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[0])
+            df_forecast['lon'] = df_forecast['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[1])
+
+        # Print crime types if available
+        if 'crime_type' in df_forecast.columns:
+            crime_types = df_forecast['crime_type'].unique()
+            print(f"  Crime types: {len(crime_types)} ({', '.join(crime_types[:3])}{'...' if len(crime_types) > 3 else ''})")
+
+    except Exception as e:
+        print(f"❌ Failed to load forecast parquet: {str(e)}")
+        raise
+
+def load_forecast_data_mongodb():
+    """Load latest forecast data from MongoDB forecast_data collection."""
+    global df_forecast, mongo_client, mongo_forecast_collection
     
-    print(f"Connecting to MONGODB...")
+    print("Connecting to MongoDB for forecast data...")
     
     # Get MongoDB URI from environment
     MONGODB_URI = os.environ.get('MONGODB_URI')
     
     if not MONGODB_URI:
-        print(f"❌ MONGODB_URI environment variable not set!")
-        print(f"   Set it with: $env:MONGODB_URI = 'your-uri-here'")
-        raise ValueError("MONGODB_URI environment variable is required when USE_MONGODB = True")
+        print("❌ MONGODB_URI environment variable not set!")
+        print("   Set it with: $env:MONGODB_URI = 'your-uri-here'")
+        raise ValueError("MONGODB_URI environment variable is required when USE_MONGODB_FORECAST = True")
     
     try:
         from pymongo import MongoClient
@@ -150,119 +170,101 @@ def load_panel_data_mongodb():
         # Test connection
         mongo_client.admin.command('ping')
         
-        # Get collection
+        # Get forecast collection
         db = mongo_client.prepol_db
-        mongo_collection = db.panel_data
+        mongo_forecast_collection = db.forecast_data
         
-        # Get statistics
-        total_docs = mongo_collection.count_documents({})
+        # Get latest forecast by generated_at
+        latest_forecast_doc = mongo_forecast_collection.find_one(
+            sort=[("generated_at", -1)]
+        )
         
-        # Get date range from metadata
-        metadata_col = db.metadata
-        metadata_doc = metadata_col.find_one({'_id': 'model_info'})
+        if not latest_forecast_doc:
+            raise ValueError("No forecast data found in MongoDB forecast_data collection")
         
-        print(f"✓ MongoDB connected: {total_docs:,} documents")
-        if metadata_doc:
-            date_range = metadata_doc.get('date_range', {})
-            print(f"  Date range: {date_range.get('min')} to {date_range.get('max')}")
-            print(f"  H3 cells: {metadata_doc.get('total_cells', 'N/A'):,}")
+        forecast_id = latest_forecast_doc.get('forecast_id')
+        print(f"Loading forecast: {forecast_id}")
+        
+        # Load all documents for this forecast
+        cursor = mongo_forecast_collection.find({"forecast_id": forecast_id})
+        docs = list(cursor)
+        
+        if not docs:
+            raise ValueError(f"No data found for forecast {forecast_id}")
+        
+        # Convert to DataFrame
+        df_forecast = pd.DataFrame(docs)
+        # Clean up MongoDB fields
+        df_forecast = df_forecast.drop(['_id'], axis=1, errors='ignore')
+
+        # If probability is missing but daily avg exists, compute it
+        if 'crime_probability' not in df_forecast.columns and 'predicted_daily_avg' in df_forecast.columns:
+            print("  Computing crime_probability from predicted_daily_avg (Poisson) [MongoDB]")
+            df_forecast['crime_probability'] = df_forecast['predicted_daily_avg'].apply(count_to_probability)
+
+        # Apply the same visualization filter as the notebook: keep only meaningful probabilities
+        if 'crime_probability' in df_forecast.columns:
+            threshold = 0.05
+            before = len(df_forecast)
+            df_forecast = df_forecast[df_forecast['crime_probability'] > threshold].reset_index(drop=True)
+            after = len(df_forecast)
+            print(f"  Filtered MongoDB forecast: kept {after:,} of {before:,} rows (crime_probability > {threshold})")
+        else:
+            print("  Warning: 'crime_probability' missing in MongoDB docs; no filtering applied")
+        
+        print("✓ Forecast loaded from MongoDB:")
+        print(f"  Forecast ID: {forecast_id}")
+        print(f"  Cells: {len(df_forecast):,}")
+        print(f"  Generated: {latest_forecast_doc.get('generated_at', 'Unknown')}")
+        print(f"  Period: {latest_forecast_doc.get('forecast_period', {}).get('start', 'Unknown')} to {latest_forecast_doc.get('forecast_period', {}).get('end', 'Unknown')}")
+        
+        # Print crime types if available
+        if 'crime_type' in df_forecast.columns:
+            crime_types = df_forecast['crime_type'].unique()
+            print(f"  Crime types: {len(crime_types)} ({', '.join(crime_types[:3])}{'...' if len(crime_types) > 3 else ''})")
         
     except ImportError:
-        print(f"❌ pymongo not installed!")
-        print(f"   Install with: pip install pymongo")
+        print("❌ pymongo not installed!")
+        print("   Install with: pip install pymongo")
         raise
     except Exception as e:
-        print(f"❌ MongoDB connection failed: {str(e)}")
+        print(f"❌ MongoDB forecast loading failed: {str(e)}")
         raise
 
-def get_panel_data_mongodb(start_date, end_date):
-    """Query MongoDB for date range and return as DataFrame.
-    
-    Args:
-        start_date: Start date string (YYYY-MM-DD)
-        end_date: End date string (YYYY-MM-DD)
-    
-    Returns:
-        DataFrame with panel data for the date range
-    """
-    # Convert to datetime
-    start_dt = pd.to_datetime(start_date).to_pydatetime()
-    end_dt = pd.to_datetime(end_date).to_pydatetime()
-    
-    # Query MongoDB
-    cursor = mongo_collection.find({
-        'date': {'$gte': start_dt, '$lte': end_dt}
-    })
-    
-    # Convert to list (this loads all documents into memory)
-    docs = list(cursor)
-    
-    if not docs:
-        return pd.DataFrame()
-    
-    # Convert to DataFrame
-    df = pd.DataFrame(docs)
-    
-    # Flatten nested features
-    features_df = pd.json_normalize(df['features'])
-    df = pd.concat([df.drop('features', axis=1), features_df], axis=1)
-    
-    # Add required columns
-    df['timestamp'] = df['date']
-    df['time_period_str'] = df['date'].dt.strftime('%Y-%m-%d')
-    
-    # Extract lat/lon from coords
-    df['lat'] = df['coords'].apply(lambda x: x['lat'])
-    df['lon'] = df['coords'].apply(lambda x: x['lon'])
-    
-    return df
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint."""
-    if USE_MONGODB:
-        # MongoDB mode
-        panel_loaded = mongo_collection is not None
-        date_range = None
-        panel_shape = None
+    """Health check endpoint with forecast data status."""
+    if USE_MONGODB_FORECAST:
+        # MongoDB forecast mode
+        forecast_loaded = mongo_forecast_collection is not None
+        forecast_info = None
         
-        if panel_loaded:
-            try:
-                # Get metadata from MongoDB
-                metadata_col = mongo_client.prepol_db.metadata
-                metadata_doc = metadata_col.find_one({'_id': 'model_info'})
-                if metadata_doc:
-                    dr = metadata_doc.get('date_range', {})
-                    date_range = {
-                        'min': dr.get('min').strftime('%Y-%m-%d') if dr.get('min') else None,
-                        'max': dr.get('max').strftime('%Y-%m-%d') if dr.get('max') else None
-                    }
-                    total_docs = metadata_doc.get('total_records', 0)
-                    total_cells = metadata_doc.get('total_cells', 0)
-                    panel_shape = [total_docs, total_cells]
-            except:
-                pass
+        if forecast_loaded and df_forecast is not None:
+            forecast_info = {
+                'cells': len(df_forecast),
+                'crime_types': len(df_forecast['crime_type'].unique()) if 'crime_type' in df_forecast.columns else 0,
+                'generated_at': str(df_forecast.iloc[0].get('generated_at', 'Unknown')) if len(df_forecast) > 0 else 'Unknown'
+            }
         
         response = jsonify({
             'status': 'healthy',
-            'data_source': 'mongodb',
+            'data_source': 'mongodb_forecast',
             'model_loaded': rf_model is not None,
-            'panel_loaded': panel_loaded,
-            'panel_shape': panel_shape,
-            'date_range': date_range
+            'forecast_loaded': forecast_loaded and df_forecast is not None,
+            'forecast_info': forecast_info
         })
     else:
-        # Parquet mode
+        # Local parquet forecast mode
         response = jsonify({
             'status': 'healthy',
-            'data_source': 'parquet',
+            'data_source': 'parquet_forecast',
             'model_loaded': rf_model is not None,
-            'panel_loaded': df_panel is not None,
-            'panel_shape': df_panel.shape if df_panel is not None else None,
-            'date_range': {
-                'min': df_panel['timestamp'].min().strftime('%Y-%m-%d') if df_panel is not None else None,
-                'max': df_panel['timestamp'].max().strftime('%Y-%m-%d') if df_panel is not None else None
-            } if df_panel is not None else None
+            'forecast_loaded': df_forecast is not None,
+            'forecast_info': {
+                'cells': len(df_forecast) if df_forecast is not None else 0,
+                'crime_types': len(df_forecast['crime_type'].unique()) if df_forecast is not None and 'crime_type' in df_forecast.columns else 0
+            } if df_forecast is not None else None
         })
     
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -270,219 +272,125 @@ def health_check():
 
 @app.route('/api/metadata', methods=['GET'])
 def get_metadata():
-    """Return available date range and model info."""
+    """Return forecast metadata and model info."""
     try:
-        if USE_MONGODB:
-            # MongoDB mode
-            if mongo_collection is None:
-                return jsonify({'error': 'MongoDB not connected'}), 500
-            
-            # Get metadata from MongoDB
-            metadata_col = mongo_client.prepol_db.metadata
-            metadata_doc = metadata_col.find_one({'_id': 'model_info'})
-            
-            if not metadata_doc:
-                return jsonify({'error': 'Metadata not found in MongoDB'}), 500
-            
-            date_range = metadata_doc.get('date_range', {})
-            return jsonify({
-                'date_range': {
-                    'min': date_range.get('min').strftime('%Y-%m-%d') if date_range.get('min') else None,
-                    'max': date_range.get('max').strftime('%Y-%m-%d') if date_range.get('max') else None
-                },
-                'total_cells': int(metadata_doc.get('total_cells', 0)),
-                'model_metrics': metadata['metrics']['test'] if metadata else {},
-                'data_source': 'mongodb'
-            })
-        else:
-            # Parquet mode
-            if df_panel is None:
-                return jsonify({'error': 'Panel data not loaded'}), 500
-            
-            return jsonify({
-                'date_range': {
-                    'min': df_panel['timestamp'].min().strftime('%Y-%m-%d'),
-                    'max': df_panel['timestamp'].max().strftime('%Y-%m-%d')
-                },
-                'total_cells': int(df_panel['h3_cell'].nunique()),
-                'model_metrics': metadata['metrics']['test'] if metadata else {},
-                'data_source': 'parquet'
-            })
+        if df_forecast is None:
+            return jsonify({'error': 'Forecast data not loaded'}), 500
+        
+        # Get forecast info from first row
+        forecast_info = df_forecast.iloc[0] if len(df_forecast) > 0 else {}
+        
+        crime_types = df_forecast['crime_type'].unique() if 'crime_type' in df_forecast.columns else []
+        
+        return jsonify({
+            'forecast_period': forecast_info.get('forecast_period', {}),
+            'total_cells': len(df_forecast),
+            'crime_types': list(crime_types),
+            'model_version': forecast_info.get('model_version', 'Unknown'),
+            'generated_at': str(forecast_info.get('generated_at', 'Unknown')),
+            'statistics': {
+                'mean_probability': float(df_forecast['crime_probability'].mean()),
+                'total_predicted_crimes': float(df_forecast['predicted_total'].sum()),
+                'high_risk_cells': int((df_forecast['crime_probability'] > 0.8).sum())
+            },
+            'model_metrics': metadata['metrics']['test'] if metadata else {},
+            'data_source': 'mongodb_forecast' if USE_MONGODB_FORECAST else 'parquet_forecast'
+        })
     except Exception as e:
         print(f"❌ Metadata endpoint error: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/predict', methods=['POST'])
-def predict():
-    """Generate crime probability predictions for date range.
-    
-    Request JSON:
-    {
-        "start_date": "2016-12-01",
-        "end_date": "2016-12-07"
-    }
-    
-    Returns GeoJSON FeatureCollection with crime probabilities per H3 cell.
-    """
+@app.route('/api/forecast', methods=['GET'])
+def get_forecast():
+    """Return entire pre-computed forecast as GeoJSON with crime type layers."""
     try:
-        data = request.get_json()
-        
-        if not data or 'start_date' not in data or 'end_date' not in data:
-            return jsonify({'error': 'Missing start_date or end_date'}), 400
-        
-        start_date = data['start_date']
-        end_date = data['end_date']
-        
-        print(f"\n🎯 Prediction request: {start_date} to {end_date}")
-        
-        # Validate date format
-        try:
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
-        except Exception as e:
-            return jsonify({'error': f'Invalid date format: {str(e)}'}), 400
-        
-        # Validate date range (max 31 days for performance)
-        days_diff = (end_dt - start_dt).days + 1
-        if days_diff < 1:
-            return jsonify({'error': 'End date must be after start date'}), 400
-        if days_diff > 31:
-            return jsonify({'error': 'Date range cannot exceed 31 days'}), 400
-        
-        # Get panel data based on data source
-        if USE_MONGODB:
-            print(f"  Querying MongoDB for date range...")
-            df_target = get_panel_data_mongodb(start_date, end_date)
-        else:
-            print(f"  Filtering parquet data for date range...")
-            df_target = df_panel[
-                (df_panel['time_period_str'] >= start_date) & 
-                (df_panel['time_period_str'] <= end_date)
-            ].copy()
-        
-        if len(df_target) == 0:
-            return jsonify({'error': 'No data available for this date range'}), 404
-        
-        print(f"  Found {len(df_target):,} records for prediction")
-        
-        # Prepare features for prediction
-        df_prep = df_target.copy()
-        
-        # Convert Period to ordinal if needed
-        for col in df_prep.columns:
-            if pd.api.types.is_period_dtype(df_prep[col]):
-                df_prep[col] = df_prep[col].apply(lambda x: x.ordinal if pd.notna(x) else np.nan)
-        
-        # Extract features and predict
-        feature_cols = metadata['feature_columns']
-        X_target = df_prep[feature_cols].fillna(0)
-        y_pred = rf_model.predict(X_target)
-        
-        # Add predictions to dataframe
-        df_target['y_pred'] = np.clip(y_pred, 0, None)
-        
-        # Add coordinates (use existing coords if from MongoDB, otherwise compute)
-        if USE_MONGODB and 'lat' in df_target.columns and 'lon' in df_target.columns:
-            # Coordinates already extracted from MongoDB coords field
-            pass
-        else:
-            # Compute coordinates from H3 cells
-            df_target['lat'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[0])
-            df_target['lon'] = df_target['h3_cell'].apply(lambda x: helpers.h3_to_geo(x)[1])
-        
-        # Aggregate by cell (temporal averaging)
-        df_cell_agg = df_target.groupby('h3_cell').agg({
-            'y': 'sum',
-            'y_pred': 'mean',
-            'lat': 'first',
-            'lon': 'first',
-            'time_period_str': 'count'
-        }).reset_index()
-        
-        df_cell_agg.rename(columns={'time_period_str': 'n_days'}, inplace=True)
-        
-        # Calculate probability with Poisson distribution
-        df_cell_agg['crime_probability'] = df_cell_agg['y_pred'].apply(count_to_probability)
-        df_cell_agg['y_pred_total'] = df_cell_agg['y_pred'] * df_cell_agg['n_days']
-        
-        # Filter cells with meaningful probability (>5%)
-        df_map = df_cell_agg[df_cell_agg['crime_probability'] > 0.05].copy()
-        
-        print(f"  Aggregated to {len(df_cell_agg):,} cells, {len(df_map):,} with >5% probability")
-        
-        # Build GeoJSON FeatureCollection
+        if df_forecast is None:
+            return jsonify({'error': 'Forecast data not loaded'}), 500
+
+        print("Generating forecast GeoJSON...")
+
+        # Build GeoJSON features
         features = []
-        
-        for idx, row in df_map.iterrows():
+
+        for idx, row in df_forecast.iterrows():
             # Get H3 cell boundary
             boundary = helpers.h3_to_boundary(row['h3_cell'])
             coords = [[[lon, lat] for lat, lon in boundary]]
-            
+
+            # Color function (match notebook implementation)
+            def get_red_gradient(prob):
+                r = int(255 - (116 * prob))
+                g = int(200 - (200 * prob))
+                b = int(200 - (200 * prob))
+                return f'#{r:02x}{g:02x}{b:02x}'
+
+            fill_color = get_red_gradient(row['crime_probability'])
+
+            # Popup content
+            popup_html = f"""
+            <div style='font-family: Arial, sans-serif; font-size: 12px;'>
+            <b>Previsão de Crime</b><br/>
+            <b>Probabilidade:</b> {row['crime_probability']*100:.1f}%<br/>
+            <b>Previsão Diária:</b> {row['predicted_daily_avg']:.3f}<br/>
+            <b>Total Semanal:</b> {row['predicted_total']:.2f}<br/>
+            {'<b>Tipo:</b> ' + str(row.get('crime_type', 'N/A')) if 'crime_type' in row else ''}
+            </div>
+            """
+
             feature = {
                 'type': 'Feature',
-                'geometry': {
-                    'type': 'Polygon',
-                    'coordinates': coords
-                },
+                'geometry': {'type': 'Polygon', 'coordinates': coords},
                 'properties': {
                     'h3_cell': row['h3_cell'],
                     'probability': float(row['crime_probability']),
-                    'predicted_daily_avg': float(row['y_pred']),
-                    'predicted_total': float(row['y_pred_total']),
-                    'actual_total': int(row['y']),
-                    'n_days': int(row['n_days']),
+                    'predicted_daily_avg': float(row['predicted_daily_avg']),
+                    'predicted_total': float(row['predicted_total']),
                     'lat': float(row['lat']),
-                    'lon': float(row['lon'])
+                    'lon': float(row['lon']),
+                    'fillColor': fill_color,
+                    'color': fill_color,
+                    'weight': 1,
+                    'fillOpacity': 0.6,
+                    'popup': popup_html,
+                    'tooltip': f"{row.get('crime_type', 'Crime')}: {row['crime_probability']*100:.1f}%",
+                    'crime_type': str(row.get('crime_type', 'All'))
                 }
             }
             features.append(feature)
-        
+
         geojson = {
             'type': 'FeatureCollection',
-            'features': features
-        }
-        
-        # Calculate summary statistics
-        summary = {
-            'total_cells': int(len(df_cell_agg)),
-            'displayed_cells': int(len(df_map)),
-            'date_range': {
-                'start': start_date,
-                'end': end_date,
-                'days': int(days_diff)
-            },
-            'statistics': {
-                'mean_probability': float(df_cell_agg['crime_probability'].mean()),
-                'median_probability': float(df_cell_agg['crime_probability'].median()),
-                'total_predicted': float(df_cell_agg['y_pred_total'].sum()),
-                'total_actual': int(df_cell_agg['y'].sum()),
-                'high_risk_cells': int((df_cell_agg['crime_probability'] > 0.8).sum())
+            'features': features,
+            'metadata': {
+                'total_cells': len(df_forecast),
+                'crime_types': list(df_forecast['crime_type'].unique()) if 'crime_type' in df_forecast.columns else [],
+                'generated_at': str(df_forecast.iloc[0].get('generated_at', 'Unknown')) if len(df_forecast) > 0 else 'Unknown',
+                'forecast_period': df_forecast.iloc[0].get('forecast_period', {}) if len(df_forecast) > 0 else {}
             }
         }
-        
-        print(f"✓ Prediction complete - returning {len(features)} features")
-        
-        return jsonify({
-            'geojson': geojson,
-            'summary': summary
-        })
-        
+
+        print(f"✓ Forecast GeoJSON generated: {len(features)} features")
+
+        response = jsonify(geojson)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
     except Exception as e:
-        print(f"❌ Error during prediction: {str(e)}")
+        print(f"❌ Error generating forecast: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 # Initialize model and data on module import (works with both Flask dev server and gunicorn)
 def initialize_app():
-    """Initialize model and panel data."""
+    """Initialize model and forecast data."""
     print("="*60)
     print("PrePol API Server - Initializing")
     print("="*60)
-    print(f"\n🔧 DATA SOURCE: {'MongoDB' if USE_MONGODB else 'Parquet (Local)'}")
-    print(f"   To switch: Edit USE_MONGODB in server.py (line ~30)\n")
+    print(f"\n🔧 DATA SOURCE: {'MongoDB Forecast' if USE_MONGODB_FORECAST else 'Parquet Forecast'}")
+    print(f"   To switch: Edit USE_MONGODB_FORECAST in server.py (line ~30)\n")
     
     # Print library versions
     print("\n📚 Installed Libraries:")
@@ -526,12 +434,12 @@ def initialize_app():
     except ImportError:
         print("  • pyarrow: Not installed")
     
-    if USE_MONGODB:
+    if USE_MONGODB_FORECAST:
         try:
             import pymongo
             print(f"  • pymongo: {pymongo.__version__}")
         except ImportError:
-            print("  • pymongo: NOT INSTALLED (required for MongoDB mode)")
+            print("  • pymongo: NOT INSTALLED (required for MongoDB forecast mode)")
     
     print()
     
@@ -544,15 +452,15 @@ def initialize_app():
     try:
         load_model()
         
-        # Load data based on USE_MONGODB flag
-        if USE_MONGODB:
-            load_panel_data_mongodb()
+        # Load forecast data based on USE_MONGODB_FORECAST flag
+        if USE_MONGODB_FORECAST:
+            load_forecast_data_mongodb()
         else:
-            load_panel_data_parquet()
+            load_forecast_data_parquet()
         
         print("\n" + "="*60)
         print("✓ Server ready!")
-        print(f"  Data source: {'MongoDB' if USE_MONGODB else 'Parquet'}")
+        print(f"  Data source: {'MongoDB Forecast' if USE_MONGODB_FORECAST else 'Parquet Forecast'}")
         print("="*60)
         
     except Exception as e:
@@ -569,6 +477,7 @@ if __name__ == '__main__':
     print(f"API running at: http://localhost:5000")
     print(f"Health check: http://localhost:5000/api/health")
     print(f"Metadata: http://localhost:5000/api/metadata")
+    print(f"Forecast: http://localhost:5000/api/forecast")
     print("="*60 + "\n")
     
     # Get port from environment variable (Render uses PORT env var)

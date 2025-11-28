@@ -3,32 +3,26 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import Home from './Home.jsx';
+import NewHome from './NewHome.jsx';
 import LoginPage from './LoginPage.jsx'
-// import MapAppBar from './MapAppBar.jsx';
 import PlaceholderImage from './PlaceholderImage.jsx'
-import Pickers from './Pickers.jsx'
-import Test from './Test.jsx'
 
 const router = createBrowserRouter([
   {
   path: '/',
-  element: <Home/>,
+  element: <LoginPage/>,
 },
 {
-  path: '/Login',
-  element: <LoginPage/>,
+  path: '/Home',
+  element: <NewHome/>,
 },
 {
   path: '/Map',
   element: <PlaceholderImage/>,
 },
 {
-  path: '/Pickers',
-  element: <Pickers/>,
-},
-{
-  path: '/Test',
-  element: <Test/>,
+  path: '/NHome',
+  element: <NewHome/>,
 },
 ]);
 

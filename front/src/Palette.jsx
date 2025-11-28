@@ -11,7 +11,7 @@ const theme = createTheme({
   palette: {
     // 1. Cor de Destaque Principal (Vermelho)
     primary: {
-      main: "#ff0000", 
+      main: "#a10000ff", 
       dark: "#650000", 
       contrastText: "#ffffff",
     },

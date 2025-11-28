@@ -14,7 +14,7 @@ RDO_FILES = {
 }
 
 # Defaults for processing
-TIME_FREQ = "D"  # 'D' daily, 'W' weekly, 'M' monthly
+TIME_FREQ = "W"  # 'D' daily, 'W' weekly, 'M' monthly
 H3_RES = 10
 DEFAULT_TZ = "America/Recife"
 RANDOM_STATE = 42

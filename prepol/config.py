@@ -2,8 +2,9 @@ from pathlib import Path
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "prepol_data" / "raw"
-OUTPUT_DIR = BASE_DIR / "prepol_out"
+# Data is stored in notebooks folder (historical structure)
+DATA_DIR = BASE_DIR / "notebooks" / "prepol_data" / "raw"
+OUTPUT_DIR = BASE_DIR / "notebooks" / "prepol_out"
 
 # RDO files (expected names)
 RDO_FILES = {
@@ -23,8 +24,7 @@ COL_LAT = "LATITUDE"
 COL_LON = "LONGITUDE"
 COL_DATETIME = "DATA_OCORRENCIA_BO"
 COL_TIME = "HORA_OCORRENCIA_BO"
-COL_RUBRICA = "RUBRICA"
-COL_CRIME_TYPE = "DESCR_TIPO_BO"
+COL_CRIMETYPE = "RUBRICA"
 
 # Hour interval categories (4-hour blocks)
 HOUR_INTERVALS = [

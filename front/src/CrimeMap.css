@@ -1,0 +1,85 @@
+.leaflet-popup-content-wrapper {
+  background: #111111 !important;
+  border: 1px solid #3c3c3c !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.leaflet-popup-tip {
+  background: #111111 !important;
+  border: 1px solid #3c3c3c !important;
+}
+
+/* === TOOLTIP === */
+
+.leaflet-tooltip {
+  background-color: #111 !important;
+  color: #fff !important;
+  border: 1px solid #333 !important;
+  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+  padding: 4px 8px;
+}
+
+/* === SETA DO TOOLTIP (todas direções) === */
+
+/* Tooltip acima do ponto */
+.leaflet-tooltip-top::before {
+  border-top-color: #111 !important;
+}
+
+/* Tooltip abaixo do ponto */
+.leaflet-tooltip-bottom::before {
+  border-bottom-color: #111 !important;
+}
+
+/* Tooltip à esquerda */
+.leaflet-tooltip-left::before {
+  border-left-color: #111 !important;
+}
+
+/* Tooltip à direita */
+.leaflet-tooltip-right::before {
+  border-right-color: #111 !important;
+}
+
+.leaflet-control-layers-toggle {
+  background-color: #111 !important;         /* fundo escuro */
+  border: 1px solid #333 !important;         /* borda */
+  box-shadow: none !important;
+  border-radius: 6px !important;             /* opcional, deixa quadradinho arredondado */
+}
+
+/* Se quiser deixar o ícone mais claro */
+.leaflet-control-layers-toggle::after {
+  filter: brightness(0.8);                   /* ajusta a cor do ícone */
+}
+
+/* === Painel expandido do menu === */
+.leaflet-control-layers {
+  background-color: #111 !important;         /* fundo escuro */
+  color: #fff !important;                    /* texto branco */
+  border: 1px solid #333 !important;
+  border-radius: 6px !important;
+  padding: 6px !important;
+}
+
+/* Remove a sombra padrão */
+.leaflet-control-layers-list {
+  box-shadow: none !important;
+}
+
+/* Estiliza os inputs (checkbox/radio) */
+.leaflet-control-layers input {
+  accent-color: #e74c3c !important;          /* cor dos checkboxes */
+}
+
+/* Texto */
+.leaflet-control-layers label {
+  color: #fff !important;
+}
+
+/* Remove a borda interna do botão */
+.leaflet-control-layers-toggle {
+  border: none !important;
+  box-shadow: none !important;
+}

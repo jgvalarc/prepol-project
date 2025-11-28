@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, GeoJSON, useMap, LayersControl } from 'react-leaflet';
-import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import { Box, CircularProgress, Typography, Alert, Divider } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
+import "./CrimeMap.css";
 import L from 'leaflet';
+import HexagonTwoToneIcon from '@mui/icons-material/HexagonTwoTone';
 
 // Fix Leaflet default icon issue in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -93,20 +95,28 @@ export default function CrimeMap({ forecastData, loading, error }) {
         `;
       }
       const popupContent = `
-        <div style='font-family: Arial, sans-serif; font-size: 12px;'>
+        <div style='
+          font-family: Arial, sans-serif; 
+          font-size: 12px; 
+          background-color: #111111;
+          color: rgba(255,255,255,0.85);
+          padding: 10px;
+          border-radius: 6px;
+        '>
           <b style='font-size: 14px;'>Previsão de Ocorrência de Crime</b><br/>
-          <hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #3c3c3c;'/>
           <b>Célula:</b> ${cellId.substring(0, 8)}...<br/>
           <b>Probabilidade:</b> ${(probability * 100).toFixed(1)}%<br/>
           <b>Período:</b> ${nDays} dias<br/>
           ${crimeTypeInfo}
-          <hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #3c3c3c;'/>
           <b>Média Diária Prevista:</b> ${predictedDaily.toFixed(3)}/dia<br/>
           <b>Total Previsto:</b> ${predictedTotal.toFixed(1)} crimes<br/>
           ${errorHtml}
-          <span style='font-size: 10px; color: #666;'>Método: Poisson (P ≥ 1 crime/dia)</span>
+          <span style='font-size: 10px; color: #999;'>Método: Poisson (P ≥ 1 crime/dia)</span>
         </div>
       `;
+
       layer.bindPopup(popupContent);
       // Tooltip on hover
       const tooltipText = crimeType && crimeType !== 'All' ?
@@ -326,38 +336,125 @@ export default function CrimeMap({ forecastData, loading, error }) {
   }
 
   // Collapsible legend using React state (moved to top of component)
-  const legendBox = (
-    <div style={{ position: 'fixed', bottom: 10, right: 10, width: 340, backgroundColor: 'white', border: '2px solid grey', zIndex: 9999, fontSize: 13, boxShadow: '2px 2px 6px rgba(0,0,0,0.3)' }}>
-      <div style={{ padding: '10px 12px', backgroundColor: '#f0f0f0', cursor: 'pointer', borderBottom: '2px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => setLegendCollapsed(c => !c)}>
-        <b style={{ margin: 0 }}>Previsão de Probabilidade de Crime</b>
-        <span style={{ fontSize: 18, fontWeight: 'bold' }}>{legendCollapsed ? '+' : '−'}</span>
-      </div>
-      <div style={{ padding: 12, display: legendCollapsed ? 'none' : 'block' }}>
-        <p style={{ margin: '0 0 8px 0' }}><b>Escala de Probabilidade:</b></p>
-        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#ffc8c8', padding: '2px 10px' }}>▮</span> Baixa</p>
-        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#ff6464', padding: '2px 10px' }}>▮</span> Média</p>
-        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#8b0000', padding: '2px 10px' }}>▮</span> Alta</p>
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>Período de Previsão:</b> 7 dias</p>
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Método:</b> Poisson (P ≥ 1 crime/dia)</p>
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Agregação:</b> Semanal (H3 Res 10)</p>
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Filtro:</b> Probabilidade {'>'} 10%</p>
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>Margem de Erro (MAE):</b> ±X crimes/semana</p>
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>R² do Modelo:</b> X</p>
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#2ecc71', fontWeight: 'bold' }}>🔍 Use o controle de camadas (canto superior direito)</p>
-        <p style={{ margin: '5px 0', fontSize: 10, color: '#666', fontStyle: 'italic' }}>Filtre por tipo de crime específico</p>
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
-        <p style={{ margin: '5px 0', fontSize: 11, color: '#e74c3c', fontWeight: 'bold' }}>⚠️ Apenas Previsões (sem dados reais)</p>
-        <p style={{ margin: '5px 0', fontSize: 10, color: '#999', fontStyle: 'italic' }}>Clique nas células para ver intervalos de confiança e tipo de crime</p>
-      </div>
-    </div>
-  );
+ const legendBox = (
+  <Box
+    sx={{
+      position: "fixed",
+      bottom: 10,
+      right: 10,
+      width: 340,
+      backgroundColor: "#111111",
+      border: "1px solid #3c3c3c",
+      zIndex: 9999,
+      fontSize: 13,
+      boxShadow: "2px 2px 6px rgba(0,0,0,0.3)",
+      borderRadius: "5px",
+    }}
+  >
+    {/* Cabeçalho clicável */}
+    <Box
+      sx={{
+        padding: "10px 12px",
+        backgroundColor: "#111111",
+        cursor: "pointer",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        borderRadius: "5px",
+      }}
+      onClick={() => setLegendCollapsed((c) => !c)}
+    >
+      <Typography sx={{ fontWeight: "bold", margin: 0, color: "rgba(255,255,255,0.7)" }}>
+        Previsão de Probabilidade de Crime
+      </Typography>
+
+      <Typography sx={{ fontSize: 18, fontWeight: "bold", color: "rgba(255,255,255,0.7)" }}>
+        {legendCollapsed ? "+" : "−"}
+      </Typography>
+    </Box>
+
+    {/* Conteúdo interno (esconde/mostra) */}
+    <Box sx={{ padding: 2, display: legendCollapsed ? "none" : "block" }}>
+      {/* Escala */}
+      <Typography sx={{ margin: "0 0 8px 0", fontWeight: "bold", color: "rgba(255,255,255,0.7)" }}>
+        Escala de Probabilidade:
+      </Typography>
+
+              <Typography sx={{ margin: "5px 0", color: "rgba(255,255,255,0.7)" }}>
+          <HexagonTwoToneIcon sx={{ color: "#ffc8c8", fontSize: 25, verticalAlign: "middle" }} /> Baixa
+        </Typography>
+
+        <Typography sx={{ margin: "5px 0", color: "rgba(255,255,255,0.7)" }}>
+          <HexagonTwoToneIcon sx={{ color: "#ff6464", fontSize: 25, verticalAlign: "middle" }} /> Média
+        </Typography>
+
+        <Typography sx={{ margin: "5px 0", color: "rgba(255,255,255,0.7)" }}>
+          <HexagonTwoToneIcon sx={{ color: "#8b0000", fontSize: 25, verticalAlign: "middle" }} /> Alta
+        </Typography>
+
+
+      <Divider sx={{ borderColor: "#3c3c3c", my: 1 }} />
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>Período de Previsão:</b> 7 dias
+      </Typography>
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>Método:</b> Poisson (P ≥ 1 crime/dia)
+      </Typography>
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>Agregação:</b> Semanal (H3 Res 10)
+      </Typography>
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>Filtro:</b> Probabilidade &gt; 10%
+      </Typography>
+
+      <Divider sx={{ borderColor: "#3c3c3c", my: 1 }} />
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>Margem de Erro (MAE):</b> ±X crimes/semana
+      </Typography>
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+        <b>R² do Modelo:</b> X
+      </Typography>
+
+      <Divider sx={{ borderColor: "#3c3c3c", my: 1 }} />
+
+      <Typography sx={{ margin: "5px 0", fontSize: 11, fontWeight: "bold", color: "#2ecc71" }}>
+        🔍 Use o controle de camadas (canto superior direito)
+      </Typography>
+
+      <Typography
+        sx={{ margin: "5px 0", fontSize: 10, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}
+      >
+        Filtre por tipo de crime específico
+      </Typography>
+
+      <Divider sx={{ borderColor: "#3c3c3c", my: 1 }} />
+
+      <Typography
+        sx={{ margin: "5px 0", fontSize: 11, fontWeight: "bold", color: "#e74c3c" }}
+      >
+        ⚠️ Apenas Previsões (sem dados reais)
+      </Typography>
+
+      <Typography
+        sx={{ margin: "5px 0", fontSize: 10, color: "rgba(255,255,255,0.7)", fontStyle: "italic" }}
+      >
+        Clique nas células para ver intervalos de confiança e tipo de crime
+      </Typography>
+
+    </Box>
+  </Box>
+);
+
 
   // Render map with predictions and all tile layers, overlays, and legend
   return (
-    <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
+    <Box sx={{ width: '100%', height: '100%', position: 'relative', backgroundColor:"Black",}}>
       <MapContainer
         center={mapCenter}
         zoom={mapZoom}

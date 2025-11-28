@@ -92,7 +92,7 @@ export default function NewHome() {
             <Box
               component="span"
               sx={{
-                background: "linear-gradient(90deg, #FF00CC 0%, #aa44ff 100%)",
+                background: "linear-gradient(90deg, #bf0000 0%, #800000 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 display: "inline-block",

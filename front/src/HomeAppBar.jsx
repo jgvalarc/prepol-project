@@ -12,26 +12,27 @@ import {
   IconButton,
 } from "@mui/material";
 
+import Logo from "./assets/Logo.png";
+
+
 import { Link } from "react-router-dom";
 // Ícones de navegação
 import HomeIcon from '@mui/icons-material/Home';
 import MapIcon from '@mui/icons-material/Map';
-import GroupsIcon from '@mui/icons-material/Groups';
-import SettingsIcon from "@mui/icons-material/Settings";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import InfoIcon from '@mui/icons-material/Info';
-import QuizIcon from '@mui/icons-material/Quiz';
+import LogoutIcon from '@mui/icons-material/Logout';
 
 // Largura FIXA da barra lateral (sempre recolhida)
 // Mantemos a constante para DRY (Não se Repetir) e clareza.
 const collapsedWidth = 60; 
 
 // 🎨 CORES LITERAIS (Definidas para o gradiente e a aparência)
-const GRADIENT_TOP_COLOR = "#7011ff"; 
+const GRADIENT_TOP_COLOR = "#800000"; 
 const GRADIENT_BOTTOM_COLOR = "#FF0000"; 
-const SIDEBAR_BG_COLOR = "#060505"; 
+const SIDEBAR_BG_COLOR = "#111111"; 
 const CURRENT_TEXT_COLOR = "#fff"; 
-const DIVIDER_COLOR = "grey"; 
+const DIVIDER_COLOR = "#3c3c3c"; 
 
 // 🎯 DEFINIÇÃO DO GRADIENTE VERTICAL
 const themeGradientLine = `linear-gradient(to bottom, ${GRADIENT_TOP_COLOR}, ${GRADIENT_BOTTOM_COLOR})`;
@@ -70,12 +71,11 @@ const lineHoverStyle = {
 const navItems = [
   { text: "Início", icon: <HomeIcon />, path: "/Home" },
   { text: "Prepol", icon: <MapIcon />, path: "/Map" },
-  { text: "Sobre", icon: <GroupsIcon />, path: "/Sobre" },
   { text: "Informação", icon: <InfoIcon />, path: "/Info" },
 ];
 
 // Item Settings
-const settingsItem = { text: "Configurações", icon: <SettingsIcon />, path: "/settings" };
+const settingsItem = { text: "User", icon: <AccountCircleIcon />, path: "/User" };
 
 export default function HomeAppBar() {
   
@@ -135,7 +135,7 @@ export default function HomeAppBar() {
           flexDirection: "column",
           zIndex: 1200,
           overflowX: "hidden",
-          borderRight: "1px solid grey",
+          borderRight: "1px solid #3c3c3c",
         }}
       >
         {/* 1.1 Header */}
@@ -145,8 +145,16 @@ export default function HomeAppBar() {
             minHeight: "64px !important",
           }}
         >
-          <IconButton sx={{ color: CURRENT_TEXT_COLOR }}>
-            <HomeIcon /> 
+          <IconButton 
+          component={Link}
+          to="/Home"
+          sx={{ p: 0 }}>
+            <Box
+              component="img"
+              src={Logo}
+              alt="Logo"
+              sx={{ width: 32, height: 32 }}
+            />
           </IconButton>
         </Toolbar>
 
@@ -168,7 +176,7 @@ export default function HomeAppBar() {
           <Divider sx={{ bgcolor: DIVIDER_COLOR, width: "75%", alignSelf: "center", }} />
 
           {/* Exemplo de Perfil */}
-          {renderListItem({ text: "Usuário", icon: <AccountCircleIcon />, path: "/profile" })}
+          {renderListItem({ text: "Sair", icon: <LogoutIcon />, path: "/" })}
         </Box>
       </Box>
       

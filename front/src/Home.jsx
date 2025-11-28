@@ -1,8 +1,7 @@
-import { Box, Typography, GlobalStyles } from "@mui/material";
+import { Box, Typography, GlobalStyles, Toolbar } from "@mui/material";
 import HomeAppBar from "./HomeAppBar.jsx";
-//import DarkVeil from "./DarkVeil";
-import FloatingLines from './Components/FloatingLines';
-
+//import DarkVeil from "./DarkVeil"; // Componente não usado/necessário
+import PixelBlast from './Components/PixelBlast.jsx';
 
 export default function Home() {
   return (
@@ -14,17 +13,22 @@ export default function Home() {
             padding: 0,
             width: "100%",
             height: "100%",
-            backgroundColor: "transparent", // deixa escuro atrás do DarkVeil
-            overflow: "hidden", // previne scroll causado pelo background animado
+            // 🛠️ CORREÇÃO 1: Fundo preto explícito para o Orb ser visível
+            backgroundColor: "#060505", 
+            overflowX: "hidden", // previne scroll horizontal
+            overflowY: "auto", // permite scroll vertical se o conteúdo crescer
           },
           "#root": {
             width: "100%",
-            height: "100%",
+            minHeight: "100%",
           },
         }}
       />
 
-      {/* 🌌 Fundo DarkVeil ocupando toda a tela sem interferir no layout */}
+      {/* 🌌 Fundo com o Orb Animado */}
+      {/* Colocado no topo da renderização para garantir que fique por baixo.
+        O zIndex: -1 o coloca atrás de TUDO, incluindo o body/html (que agora é preto).
+      */}
       <Box
         sx={{
           position: "fixed",
@@ -32,14 +36,15 @@ export default function Home() {
           left: 0,
           width: "100%",
           height: "100%",
-          zIndex: -1,        // 🚀 chave: fica atrás de tudo
-          pointerEvents: "none", // evita qualquer interferência com cliques
+          zIndex: 0, // ZIndex 0 ou -1. Usar ZIndex: 0 é mais seguro se o body tiver ZIndex baixo.
+          // 🛠️ CORREÇÃO 2: Removido 'pointerEvents: "none"' para permitir interatividade (hover/mouse move)
+          // Se o Orb não precisar de interatividade, você pode readicionar: pointerEvents: "none",
         }}
       >
-        <FloatingLines />
+        <PixelBlast />
       </Box>
 
-      {/* 📦 Conteúdo principal (fica acima do DarkVeil) */}
+      {/* 📦 Conteúdo Principal e Sidebar */}
       <Box
         sx={{
           display: "flex",
@@ -47,28 +52,35 @@ export default function Home() {
           minHeight: "100vh",
           color: "white",
           position: "relative",
-          zIndex: 1,  // garante que todos os componentes fiquem acima
-          backgroundColor: "transparent",
+          zIndex: 1, // Garante que todo o conteúdo (sidebar, texto) fique acima do Orb (ZIndex: 0)
+          backgroundColor: "transparent", // Garante que o fundo do Orb apareça
         }}
       >
+        {/* 1. Sidebar (HomeAppBar) - ZIndex já é alto por ser fixed/sticky */}
         <HomeAppBar />
 
+        {/* 2. Conteúdo da Página */}
         <Box
+          component="main" // Boa prática para o conteúdo principal
           sx={{
             flexGrow: 1,
+            // 🛠️ Ajuste de Margem: Garante que o conteúdo comece após a sidebar recolhida (60px)
             marginLeft: "60px",
             minHeight: "100vh",
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
+            p: 3, // Adiciona um padding
           }}
         >
-          <Typography variant="h3" sx={{ mb: 2 }}>
+          {/* Adicionando um Toolbar vazio para compensar a barra superior, se necessário. 
+             (Geralmente usado quando a app bar é fixa no topo) */}
+          <Toolbar />
+          
+          <Typography variant="h3" sx={{ mb: 2, textAlign: 'center' }}>
             Preveja o risco. Proteja-se com informação.
           </Typography>
 
-          <Typography variant="body1" sx={{ color: "#aaa" }}>
+          <Typography variant="body1" sx={{ color: "#aaa", textAlign: 'center' }}>
             PREPOL
           </Typography>
         </Box>

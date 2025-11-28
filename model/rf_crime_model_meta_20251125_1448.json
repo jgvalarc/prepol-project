@@ -1,0 +1,100 @@
+{
+  "model_type": "RandomForestRegressor",
+  "timestamp": "20251125_1448",
+  "training_date": "2025-11-25T14:48:46.626834",
+  "model_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "criterion": "squared_error",
+    "max_depth": 15,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 5,
+    "min_samples_split": 10,
+    "min_weight_fraction_leaf": 0.0,
+    "n_estimators": 100,
+    "n_jobs": -1,
+    "oob_score": false,
+    "random_state": 42,
+    "verbose": 2,
+    "warm_start": false
+  },
+  "feature_columns": [
+    "RUBRICA",
+    "crime_type_encoded",
+    "y_norm",
+    "y_lag_1",
+    "y_lag_2",
+    "y_lag_3",
+    "y_rol_3",
+    "y_rol_7",
+    "y_lag_1_vizinhos"
+  ],
+  "n_features": 9,
+  "training_samples": 32390356,
+  "test_samples": 8097589,
+  "train_date_range": {
+    "start": "2297",
+    "end": "2422"
+  },
+  "test_date_range": {
+    "start": "2422",
+    "end": "2453"
+  },
+  "metrics": {
+    "train": {
+      "mae": 0.001978796322966935,
+      "mse": 0.0015694056692160834,
+      "rmse": 0.03961572502449101,
+      "r2": 0.9440849854001075,
+      "mape": 6.731919982491938
+    },
+    "test": {
+      "mae": 0.0039421645373399206,
+      "mse": 0.0031701785638388606,
+      "rmse": 0.05630433876566584,
+      "r2": 0.9323709586575336,
+      "mape": 9.716441354201935
+    }
+  },
+  "top_features": [
+    {
+      "feature": "y_norm",
+      "importance": 0.8769570023549393
+    },
+    {
+      "feature": "y_rol_7",
+      "importance": 0.06158377908715676
+    },
+    {
+      "feature": "y_rol_3",
+      "importance": 0.029153695536465796
+    },
+    {
+      "feature": "y_lag_1",
+      "importance": 0.015738537802293555
+    },
+    {
+      "feature": "y_lag_2",
+      "importance": 0.008584173768783919
+    },
+    {
+      "feature": "y_lag_3",
+      "importance": 0.004260045476226343
+    },
+    {
+      "feature": "crime_type_encoded",
+      "importance": 0.0019583036546247847
+    },
+    {
+      "feature": "RUBRICA",
+      "importance": 0.0017644623195094348
+    },
+    {
+      "feature": "y_lag_1_vizinhos",
+      "importance": 0.0
+    }
+  ]
+}

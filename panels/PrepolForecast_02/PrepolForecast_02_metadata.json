@@ -1,0 +1,88 @@
+{
+  "forecast_info": {
+    "generated_at": "2025-11-27T21:18:55.494846",
+    "forecast_period": {
+      "week_of_year": 2,
+      "year": 1970,
+      "start_date": "1970-01-08",
+      "end_date": "1970-01-14",
+      "duration_days": 7,
+      "frequency": "weekly"
+    },
+    "panel_type": "sparse_forecast",
+    "h3_resolution": 9
+  },
+  "model_info": {
+    "model_file": "rf_crime_model_20251125_1448.joblib",
+    "test_r2": 0.9323709586575336,
+    "test_mae": 0.0039421645373399206,
+    "test_rmse": 0.05630433876566584,
+    "feature_columns": [
+      "RUBRICA",
+      "crime_type_encoded",
+      "y_norm",
+      "y_lag_1",
+      "y_lag_2",
+      "y_lag_3",
+      "y_rol_3",
+      "y_rol_7",
+      "y_lag_1_vizinhos"
+    ]
+  },
+  "panel_statistics": {
+    "total_cells": 51577,
+    "total_predicted_crimes": 1411.8859352999825,
+    "mean_daily_prediction": 0.003910618895188561,
+    "median_daily_prediction": 1.2624522580939675e-06,
+    "max_daily_prediction": 1.755097537033461,
+    "cells_with_predictions": 51577,
+    "probability_stats": {
+      "mean": 0.003499346170530021,
+      "median": 1.2624514611481175e-06,
+      "min": 1.5046121759620945e-07,
+      "max": 0.8271096217453132,
+      "cells_high_risk_80pct": 1,
+      "cells_high_risk_50pct": 10
+    }
+  },
+  "data_structure": {
+    "columns": [
+      "h3_cell",
+      "period",
+      "predicted_daily_avg",
+      "predicted_total",
+      "crime_probability",
+      "lat",
+      "lon",
+      "n_days",
+      "crime_type"
+    ],
+    "dtypes": {
+      "h3_cell": "object",
+      "period": "datetime64[ns]",
+      "predicted_daily_avg": "float64",
+      "predicted_total": "float64",
+      "crime_probability": "float64",
+      "lat": "float64",
+      "lon": "float64",
+      "n_days": "int64",
+      "crime_type": "object"
+    },
+    "sparsity": "one_row_per_h3_cell",
+    "has_crime_type": true
+  },
+  "export_info": {
+    "parquet_file": "PrepolForecast_02.parquet",
+    "metadata_file": "PrepolForecast_02_metadata.json",
+    "folder": "PrepolForecast_02",
+    "compression": "snappy",
+    "format_version": "1.0"
+  },
+  "usage_notes": {
+    "probability_calculation": "Poisson distribution P(≥1 crime/day) = 1 - e^(-daily_avg)",
+    "daily_conversion": "weekly_predictions / 7 = daily_avg",
+    "matches_backend": "Compatible with server.py and CrimeMap.jsx",
+    "sparse_format": "One row per H3 cell with predictions",
+    "crime_type_filtering": "Column 'crime_type' used for map filtering layers"
+  }
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap, LayersControl } from 'react-leaflet';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -26,9 +26,13 @@ function MapBoundsUpdater({ geojson }) {
   return null;
 }
 
-export default function CrimeMap({ predictionData, loading, error }) {
+export default function CrimeMap({ forecastData, loading, error }) {
   const [mapCenter] = useState([-8.05, -34.9]); // Recife, Brazil
   const [mapZoom] = useState(11);
+  // Selected crime type filters (Set for fast membership checks)
+  const [selectedCrimeTypes, setSelectedCrimeTypes] = useState(new Set(['All']));
+  // Legend collapsed state (must be at top before any returns)
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
 
   // Color gradient function (light red -> dark red)
   const getRedGradient = (normalizedValue) => {
@@ -39,68 +43,137 @@ export default function CrimeMap({ predictionData, loading, error }) {
     return `rgb(${r}, ${g}, ${b})`;
   };
 
-  // Style function for GeoJSON features
+  // Style function for GeoJSON features (matches notebook)
   const styleFeature = (feature) => {
     if (!feature || !feature.properties) return {};
-
-    const probability = feature.properties.probability || 0;
-
+    const p = feature.properties;
+    const probability = Number(
+      p.probability ?? p.crime_probability ?? p.normalized_prob ?? 0
+    );
+    const probClamped = Number.isFinite(probability) ? Math.max(0, Math.min(1, probability)) : 0;
     return {
-      fillColor: getRedGradient(probability),
+      fillColor: getRedGradient(probClamped),
+      color: getRedGradient(probClamped),
       weight: 1,
-      opacity: 1,
-      color: getRedGradient(probability),
-      fillOpacity: 0.6
+      fillOpacity: 0.6,
+      smoothFactor: 0.5
     };
   };
 
-  // Popup content for each feature
+  // Popup content for each feature (matches notebook format, with error margin if present)
   const onEachFeature = (feature, layer) => {
     if (feature.properties) {
       const props = feature.properties;
+      const crimeType = props.crime_type ?? props.crime_type_display ?? props['crime type'] ?? 'All';
+      const crimeTypeInfo = crimeType && crimeType !== 'All' ?
+        `<hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>` +
+        `<b>Tipo de Crime Mais Provável:</b> <span style='color: #e74c3c; font-weight: bold;'>${crimeType}</span><br/>` : '';
+      const probability = Number(props.probability ?? props.crime_probability ?? props.normalized_prob ?? 0);
+      const predictedDaily = Number(props.predicted_daily_avg ?? props.predicted_daily ?? props.daily_avg ?? 0);
+      const predictedTotal = Number(props.predicted_total ?? props.total_prediction ?? props.predicted_total ?? 0);
+      const nDays = Number(props.n_days ?? props.n_days_forecast ?? 7) || 7;
+      const cellId = String(props.h3_cell ?? props.h3 ?? props.cell ?? 'unknown');
+      // Error margin (if present)
+      const weekly_mae = props.weekly_mae ?? null;
+      const prediction_lower = weekly_mae ? Math.max(0, predictedTotal - weekly_mae) : null;
+      const prediction_upper = weekly_mae ? predictedTotal + weekly_mae : null;
+      const prediction_lower_95 = weekly_mae ? Math.max(0, predictedTotal - 2 * weekly_mae) : null;
+      const prediction_upper_95 = weekly_mae ? predictedTotal + 2 * weekly_mae : null;
+      const model_r2_test = props.model_r2_test ?? null;
+      const model_mae_test = props.model_mae_test ?? null;
+      let errorHtml = '';
+      if (weekly_mae) {
+        errorHtml = `
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>
+          <b>Margem de Erro (MAE):</b> ±${weekly_mae.toFixed(2)} crimes<br/>
+          <b>Intervalo 68%:</b> ${prediction_lower.toFixed(2)} - ${prediction_upper.toFixed(2)}<br/>
+          <b>Intervalo 95%:</b> ${prediction_lower_95.toFixed(2)} - ${prediction_upper_95.toFixed(2)}<br/>
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #aaa;'/>
+          <span style='font-size: 10px; color: #666;'>Modelo R²: ${model_r2_test?.toFixed(3) ?? ''} | MAE Teste: ${model_mae_test?.toFixed(4) ?? ''}</span>
+        `;
+      }
       const popupContent = `
-        <div style="font-family: Arial, sans-serif; font-size: 12px;">
-          <b style="font-size: 14px;">Probabilidade de Ocorrência de Crime</b><br/>
-          <hr style="margin: 5px 0; border: none; border-top: 1px solid #ddd;"/>
-          <b>Célula:</b> ${props.h3_cell.substring(0, 8)}...<br/>
-          <b>Probabilidade:</b> ${(props.probability * 100).toFixed(1)}%<br/>
-          <b>Período:</b> ${props.n_days} dias<br/>
-          <hr style="margin: 5px 0; border: none; border-top: 1px solid #ddd;"/>
-          <b>Média Diária Prevista:</b> ${props.predicted_daily_avg.toFixed(3)}/dia<br/>
-          <b>Total Previsto:</b> ${props.predicted_total.toFixed(1)}<br/>
-          <b>Total Real:</b> ${props.actual_total}<br/>
-          <b>Erro de Predição:</b> ${Math.abs(props.predicted_total - props.actual_total).toFixed(1)}
+        <div style='font-family: Arial, sans-serif; font-size: 12px;'>
+          <b style='font-size: 14px;'>Previsão de Ocorrência de Crime</b><br/>
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>
+          <b>Célula:</b> ${cellId.substring(0, 8)}...<br/>
+          <b>Probabilidade:</b> ${(probability * 100).toFixed(1)}%<br/>
+          <b>Período:</b> ${nDays} dias<br/>
+          ${crimeTypeInfo}
+          <hr style='margin: 5px 0; border: none; border-top: 1px solid #ddd;'/>
+          <b>Média Diária Prevista:</b> ${predictedDaily.toFixed(3)}/dia<br/>
+          <b>Total Previsto:</b> ${predictedTotal.toFixed(1)} crimes<br/>
+          ${errorHtml}
+          <span style='font-size: 10px; color: #666;'>Método: Poisson (P ≥ 1 crime/dia)</span>
         </div>
       `;
       layer.bindPopup(popupContent);
-
       // Tooltip on hover
-      layer.bindTooltip(`Probabilidade: ${(props.probability * 100).toFixed(1)}%`, {
+      const tooltipText = crimeType && crimeType !== 'All' ?
+        `${crimeType}: ${(probability * 100).toFixed(1)}%` :
+        `Probabilidade: ${(probability * 100).toFixed(1)}%`;
+      layer.bindTooltip(tooltipText, {
         sticky: true
       });
     }
   };
 
-  // Memoize GeoJSON layer to prevent unnecessary re-renders
-  const geoJsonLayer = useMemo(() => {
-    if (!predictionData || !predictionData.geojson) return null;
-
-    return (
-      <GeoJSON
-        key={JSON.stringify(predictionData.geojson)} // Force re-render on data change
-        data={predictionData.geojson}
-        style={styleFeature}
-        onEachFeature={onEachFeature}
-      />
-    );
-  }, [predictionData]);
+  // Build overlays for crime types (for layer control)
+  const crimeTypeOverlays = useMemo(() => {
+    if (!forecastData || !forecastData.features) return [];
+    const allFeatures = forecastData.features;
+    
+    // Build map: crimeType -> features
+    const crimeTypeMap = {};
+    allFeatures.forEach(feature => {
+      const p = feature.properties || {};
+      const crimeType = p.crime_type ?? p.crime_type_display ?? p['crime type'] ?? 'All';
+      if (!crimeTypeMap[crimeType]) crimeTypeMap[crimeType] = [];
+      crimeTypeMap[crimeType].push(feature);
+    });
+    
+    // Always add "All" layer showing all features
+    crimeTypeMap['All'] = allFeatures;
+    
+    // Sort crime types: All first, then by count desc
+    const sortedTypes = Object.keys(crimeTypeMap).sort((a, b) => {
+      if (a === 'All') return -1;
+      if (b === 'All') return 1;
+      return crimeTypeMap[b].length - crimeTypeMap[a].length;
+    });
+    
+    // Build overlays
+    return sortedTypes.map(type => {
+      const features = crimeTypeMap[type];
+      const overlayName = type === 'All' ? 'Todos os Tipos' : `🔍 ${type}`;
+      return (
+        <LayersControl.Overlay key={type} checked={type === 'All'} name={overlayName}>
+          <GeoJSON
+            key={type + features.length}
+            data={{ type: 'FeatureCollection', features }}
+            style={styleFeature}
+            onEachFeature={onEachFeature}
+          />
+        </LayersControl.Overlay>
+      );
+    });
+  }, [forecastData]);
 
   // Summary statistics panel
   const renderSummary = () => {
-    if (!predictionData || !predictionData.summary) return null;
+    if (!forecastData || !forecastData.metadata) return null;
 
-    const { summary } = predictionData;
-    const stats = summary.statistics;
+    const { metadata } = forecastData;
+    const stats = metadata.statistics;
+
+    // Get crime type distribution
+    const crimeTypeCounts = {};
+    if (forecastData.features) {
+      forecastData.features.forEach(feature => {
+        const crimeType = feature.properties?.crime_type || 'All';
+        crimeTypeCounts[crimeType] = (crimeTypeCounts[crimeType] || 0) + 1;
+      });
+    }
 
     return (
       <Box
@@ -123,35 +196,53 @@ export default function CrimeMap({ predictionData, loading, error }) {
         </Typography>
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Período:</b> {summary.date_range.start} a {summary.date_range.end} ({summary.date_range.days} dias)
+          <b>Período:</b> {metadata.forecast_period?.start || 'N/A'} a {metadata.forecast_period?.end || 'N/A'}
         </Typography>
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Células exibidas:</b> {summary.displayed_cells.toLocaleString()} de {summary.total_cells.toLocaleString()}
-        </Typography>
-        
-        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Probabilidade média:</b> {(stats.mean_probability * 100).toFixed(1)}%
-        </Typography>
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Probabilidade mediana:</b> {(stats.median_probability * 100).toFixed(1)}%
-        </Typography>
-        
-        <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Células de alto risco (&gt;80%):</b> {stats.high_risk_cells}
+          <b>Células exibidas:</b> {metadata.total_cells?.toLocaleString() || 0}
         </Typography>
         
         <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
         
         <Typography variant="body2" sx={{ mb: 0.5 }}>
-          <b>Total previsto:</b> {stats.total_predicted.toFixed(0)} crimes
+          <b>Probabilidade média:</b> {(stats?.mean_probability * 100)?.toFixed(1) || 'N/A'}%
+        </Typography>
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Probabilidade mediana:</b> {(stats?.median_probability * 100)?.toFixed(1) || 'N/A'}%
+        </Typography>
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Células de alto risco (&gt;80%):</b> {stats?.high_risk_cells || 0}
+        </Typography>
+        
+        {Object.keys(crimeTypeCounts).length > 1 && (
+          <>
+            <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
+            <Typography variant="body2" sx={{ mb: 0.5, fontSize: '11px' }}>
+              <b>Distribuição por Tipo:</b>
+            </Typography>
+            {Object.entries(crimeTypeCounts)
+              .filter(([type]) => type !== 'All')
+              .sort(([,a], [,b]) => b - a)
+              .slice(0, 3)
+              .map(([type, count]) => (
+                <Typography key={type} variant="body2" sx={{ mb: 0.5, fontSize: '11px', pl: 1 }}>
+                  • {type}: {count}
+                </Typography>
+              ))}
+          </>
+        )}
+        
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #555' }} />
+        
+        <Typography variant="body2" sx={{ mb: 0.5 }}>
+          <b>Total previsto:</b> {stats?.total_predicted_crimes?.toFixed(0) || 'N/A'} crimes
         </Typography>
         
         <Typography variant="body2">
-          <b>Total real:</b> {stats.total_actual} crimes
+          <b>Modelo:</b> {metadata.model_version || 'N/A'}
         </Typography>
 
         <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#aaa' }}>
@@ -160,6 +251,8 @@ export default function CrimeMap({ predictionData, loading, error }) {
       </Box>
     );
   };
+
+    // Remove filter box (now handled by layer control)
 
   // Render loading state
   if (loading) {
@@ -177,10 +270,10 @@ export default function CrimeMap({ predictionData, loading, error }) {
       >
         <CircularProgress size={60} sx={{ color: '#7011ff' }} />
         <Typography variant="h6" sx={{ mt: 2, color: 'white' }}>
-          Gerando predições...
+          Carregando previsões...
         </Typography>
         <Typography variant="body2" sx={{ mt: 1, color: '#aaa' }}>
-          Isso pode levar alguns segundos
+          Carregando dados pré-computados do servidor
         </Typography>
       </Box>
     );
@@ -201,7 +294,7 @@ export default function CrimeMap({ predictionData, loading, error }) {
         }}
       >
         <Alert severity="error" sx={{ maxWidth: 500 }}>
-          <Typography variant="h6">Erro de Predição</Typography>
+          <Typography variant="h6">Erro ao Carregar Previsões</Typography>
           <Typography variant="body2">{error}</Typography>
         </Alert>
       </Box>
@@ -209,7 +302,7 @@ export default function CrimeMap({ predictionData, loading, error }) {
   }
 
   // Render empty state
-  if (!predictionData) {
+  if (!forecastData) {
     return (
       <Box
         sx={{
@@ -223,16 +316,46 @@ export default function CrimeMap({ predictionData, loading, error }) {
         }}
       >
         <Typography variant="h5" sx={{ color: 'white', mb: 2 }}>
-          Selecione um intervalo de datas para ver as predições
+          Nenhuma previsão disponível
         </Typography>
         <Typography variant="body1" sx={{ color: '#aaa' }}>
-          Use os controles no canto superior direito para configurar sua análise
+          Verifique se o servidor está rodando e se há dados de previsão
         </Typography>
       </Box>
     );
   }
 
-  // Render map with predictions
+  // Collapsible legend using React state (moved to top of component)
+  const legendBox = (
+    <div style={{ position: 'fixed', bottom: 10, right: 10, width: 340, backgroundColor: 'white', border: '2px solid grey', zIndex: 9999, fontSize: 13, boxShadow: '2px 2px 6px rgba(0,0,0,0.3)' }}>
+      <div style={{ padding: '10px 12px', backgroundColor: '#f0f0f0', cursor: 'pointer', borderBottom: '2px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => setLegendCollapsed(c => !c)}>
+        <b style={{ margin: 0 }}>Previsão de Probabilidade de Crime</b>
+        <span style={{ fontSize: 18, fontWeight: 'bold' }}>{legendCollapsed ? '+' : '−'}</span>
+      </div>
+      <div style={{ padding: 12, display: legendCollapsed ? 'none' : 'block' }}>
+        <p style={{ margin: '0 0 8px 0' }}><b>Escala de Probabilidade:</b></p>
+        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#ffc8c8', padding: '2px 10px' }}>▮</span> Baixa</p>
+        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#ff6464', padding: '2px 10px' }}>▮</span> Média</p>
+        <p style={{ margin: '5px 0' }}><span style={{ backgroundColor: '#8b0000', padding: '2px 10px' }}>▮</span> Alta</p>
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>Período de Previsão:</b> 7 dias</p>
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Método:</b> Poisson (P ≥ 1 crime/dia)</p>
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Agregação:</b> Semanal (H3 Res 10)</p>
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#666' }}><b>Filtro:</b> Probabilidade {'>'} 10%</p>
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>Margem de Erro (MAE):</b> ±X crimes/semana</p>
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#333' }}><b>R² do Modelo:</b> X</p>
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#2ecc71', fontWeight: 'bold' }}>🔍 Use o controle de camadas (canto superior direito)</p>
+        <p style={{ margin: '5px 0', fontSize: 10, color: '#666', fontStyle: 'italic' }}>Filtre por tipo de crime específico</p>
+        <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #ddd' }} />
+        <p style={{ margin: '5px 0', fontSize: 11, color: '#e74c3c', fontWeight: 'bold' }}>⚠️ Apenas Previsões (sem dados reais)</p>
+        <p style={{ margin: '5px 0', fontSize: 10, color: '#999', fontStyle: 'italic' }}>Clique nas células para ver intervalos de confiança e tipo de crime</p>
+      </div>
+    </div>
+  );
+
+  // Render map with predictions and all tile layers, overlays, and legend
   return (
     <Box sx={{ width: '100%', height: '100%', position: 'relative' }}>
       <MapContainer
@@ -240,20 +363,53 @@ export default function CrimeMap({ predictionData, loading, error }) {
         zoom={mapZoom}
         style={{ width: '100%', height: '100%' }}
         zoomControl={true}
+        attributionControl={false}
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
-        
-        {geoJsonLayer}
-        
-        {predictionData && predictionData.geojson && (
-          <MapBoundsUpdater geojson={predictionData.geojson} />
+        <LayersControl position="topright" collapsed={true}>
+          <LayersControl.BaseLayer name="CartoDB Voyager (HD)">
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              maxZoom={20}
+              maxNativeZoom={20}
+              subdomains="abcd"
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name="OpenStreetMap">
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              maxZoom={19}
+              maxNativeZoom={19}
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name="CartoDB Positron">
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              maxZoom={20}
+              maxNativeZoom={20}
+              subdomains="abcd"
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer checked name="CartoDB Dark Matter">
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              maxZoom={20}
+              maxNativeZoom={20}
+              subdomains="abcd"
+            />
+          </LayersControl.BaseLayer>
+          {/* Crime type overlays */}
+          {crimeTypeOverlays}
+        </LayersControl>
+        {forecastData && (
+          <MapBoundsUpdater geojson={forecastData} />
         )}
       </MapContainer>
-
-      {renderSummary()}
+      {/* Collapsible legend overlay (matches notebook) */}
+      {legendBox}
     </Box>
   );
 }

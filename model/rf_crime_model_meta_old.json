@@ -1,0 +1,95 @@
+{
+  "model_type": "RandomForestRegressor",
+  "timestamp": "20251119_1852",
+  "training_date": "2025-11-19T18:52:22.910596",
+  "model_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "criterion": "squared_error",
+    "max_depth": 15,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 5,
+    "min_samples_split": 10,
+    "min_weight_fraction_leaf": 0.0,
+    "n_estimators": 100,
+    "n_jobs": -1,
+    "oob_score": false,
+    "random_state": 42,
+    "verbose": 1,
+    "warm_start": false
+  },
+  "feature_columns": [
+    "time_period",
+    "y_norm",
+    "y_lag_1",
+    "y_lag_2",
+    "y_lag_3",
+    "y_rol_3",
+    "y_rol_7",
+    "y_lag_1_vizinhos"
+  ],
+  "n_features": 8,
+  "training_samples": 11574626,
+  "test_samples": 2893657,
+  "train_date_range": {
+    "start": "2013-01-01 00:00:00",
+    "end": "2016-03-14 00:00:00"
+  },
+  "test_date_range": {
+    "start": "2016-03-14 00:00:00",
+    "end": "2016-12-31 00:00:00"
+  },
+  "metrics": {
+    "train": {
+      "mae": 0.009753367174005132,
+      "mse": 0.006681989595386898,
+      "rmse": 0.08174343762888185,
+      "r2": 0.9325006188328768,
+      "mape": 9.848578839112164
+    },
+    "test": {
+      "mae": 0.018211461709097494,
+      "mse": 0.015446883442911901,
+      "rmse": 0.12428549168310797,
+      "r2": 0.911011444443667,
+      "mape": 12.526720574441091
+    }
+  },
+  "top_features": [
+    {
+      "feature": "y_norm",
+      "importance": 0.8842644857698813
+    },
+    {
+      "feature": "y_rol_7",
+      "importance": 0.04815200134919682
+    },
+    {
+      "feature": "y_lag_1_vizinhos",
+      "importance": 0.026769514465145486
+    },
+    {
+      "feature": "y_rol_3",
+      "importance": 0.021787303952667588
+    },
+    {
+      "feature": "y_lag_1",
+      "importance": 0.006580210851602002
+    },
+    {
+      "feature": "y_lag_2",
+      "importance": 0.004259173297667358
+    },
+    {
+      "feature": "time_period",
+      "importance": 0.00409814549655457
+    },
+    {
+      "feature": "y_lag_3",
+      "importance": 0.004089164817285019
+    }
+  ]
+}

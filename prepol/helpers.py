@@ -66,6 +66,82 @@ def _combine_date_time(date_series: pd.Series, time_delta: pd.Series, tz: str = 
     return dt_naive
 
 
+def categorize_hour_interval(hour: float) -> str:
+    """Categorize hour (0-23) into 4-hour intervals.
+    
+    Parameters
+    ----------
+    hour : float
+        Hour of the day (0-23). NaN values return 'DESCONHECIDO'.
+    
+    Returns
+    -------
+    str
+        Hour interval category: '00-04h', '04-08h', '08-12h', '12-16h', '16-20h', '20-24h', or 'DESCONHECIDO'
+    
+    Examples
+    --------
+    >>> categorize_hour_interval(2.5)
+    '00-04h'
+    >>> categorize_hour_interval(15.0)
+    '12-16h'
+    >>> categorize_hour_interval(np.nan)
+    'DESCONHECIDO'
+    """
+    if pd.isna(hour):
+        return 'DESCONHECIDO'
+    
+    hour = int(hour)
+    
+    for start, end, label in config.HOUR_INTERVALS:
+        if start <= hour < end:
+            return label
+    
+    # Handle edge case (hour >= 24 or < 0)
+    return 'DESCONHECIDO'
+
+
+def extract_hour_from_time_string(time_str: str) -> float:
+    """Extract hour from time string in format 'HHMM' (e.g., '1910' -> 19.0).
+    
+    Parameters
+    ----------
+    time_str : str
+        Time string, often in format like '1910.0' (7:10 PM) or '0830' (8:30 AM)
+    
+    Returns
+    -------
+    float
+        Hour (0-23) or NaN if parsing fails
+    
+    Examples
+    --------
+    >>> extract_hour_from_time_string('1910.0')
+    19.0
+    >>> extract_hour_from_time_string('0830')
+    8.0
+    >>> extract_hour_from_time_string('invalid')
+    nan
+    """
+    try:
+        # Remove .0 suffix if present
+        time_str = str(time_str).replace('.0', '').strip()
+        
+        if len(time_str) == 0 or time_str == 'nan':
+            return np.nan
+        
+        # Parse as integer and extract hour
+        time_int = int(float(time_str))
+        hour = time_int // 100  # e.g., 1910 // 100 = 19
+        
+        if 0 <= hour <= 23:
+            return float(hour)
+        else:
+            return np.nan
+    except (ValueError, TypeError):
+        return np.nan
+
+
 def choose_csv_engine() -> str:
     """Choose read_csv engine; prefer 'pyarrow' if available else 'python'."""
     try:

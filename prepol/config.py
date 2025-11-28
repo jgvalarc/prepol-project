@@ -2,8 +2,9 @@ from pathlib import Path
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "prepol_data" / "raw"
-OUTPUT_DIR = BASE_DIR / "prepol_out"
+# Data is stored in notebooks folder (historical structure)
+DATA_DIR = BASE_DIR / "notebooks" / "prepol_data" / "raw"
+OUTPUT_DIR = BASE_DIR / "notebooks" / "prepol_out"
 
 # RDO files (expected names)
 RDO_FILES = {
@@ -13,8 +14,8 @@ RDO_FILES = {
 }
 
 # Defaults for processing
-TIME_FREQ = "D"  # 'D' daily, 'W' weekly, 'M' monthly
-H3_RES = 9
+TIME_FREQ = "W"  # 'D' daily, 'W' weekly, 'M' monthly
+H3_RES = 10
 DEFAULT_TZ = "America/Recife"
 RANDOM_STATE = 42
 
@@ -23,7 +24,17 @@ COL_LAT = "LATITUDE"
 COL_LON = "LONGITUDE"
 COL_DATETIME = "DATA_OCORRENCIA_BO"
 COL_TIME = "HORA_OCORRENCIA_BO"
-COL_CRIME_TYPE = "DESCR_TIPO_BO"
+COL_CRIMETYPE = "RUBRICA"
+
+# Hour interval categories (4-hour blocks)
+HOUR_INTERVALS = [
+    (0, 4, "00-04h"),
+    (4, 8, "04-08h"),
+    (8, 12, "08-12h"),
+    (12, 16, "12-16h"),
+    (16, 20, "16-20h"),
+    (20, 24, "20-24h")
+]
 
 # Export filenames
 RDO_CLEAN_PARQUET = OUTPUT_DIR / "rdo_clean.parquet"

@@ -37,11 +37,11 @@ MongoDB (forecast_data collection)
 ## Critical Patterns & Conventions
 
 ### 1. Forecast Data Source Toggle (CRITICAL)
-**`api/server.py` line ~34**: `USE_MONGODB_FORECAST = True/False` switches forecast data source:
-- **MongoDB mode** (`True`): Loads latest forecast from MongoDB Atlas `forecast_data` collection. Required for production. Requires `MONGODB_URI` env var.
-- **Parquet mode** (`False`): Loads forecast from local `panels/PrepolForecast_XX/*.parquet` file. Use for local development/testing.
+**`api/server.py` line 34**: `USE_MONGODB_FORECAST = True/False` switches forecast data source:
+- **MongoDB mode** (`True`): Loads latest forecast from MongoDB Atlas `forecast_data` collection. Required for production. Requires `MONGODB_URI` env var and `pymongo>=4.6.0` installed.
+- **Parquet mode** (`False`, **current default**): Loads forecast from local `panels/PrepolForecast_03/*.parquet` file. Use for local development/testing.
 
-**Important**: This is NOT the old panel data toggle - the old `USE_MONGODB` variable is DEPRECATED. The system now serves pre-computed forecasts, not on-demand predictions from panel data.
+**Important**: This is NOT the old panel data toggle - the old `USE_MONGODB` variable is DEPRECATED. The system now serves pre-computed forecasts, not on-demand predictions from panel data. **MongoDB mode requires pymongo** which is installed via `api/requirements.txt` but missing from root `requirements.txt`.
 
 ### 2. Forecast Panel Structure (NEW)
 Forecasts are **sparse** (one row per H3 cell, not time series):
@@ -62,7 +62,7 @@ Forecasts are **sparse** (one row per H3 cell, not time series):
 Folders: `panels/PrepolForecast_XX/` with `PrepolForecast_XX.parquet` + `_metadata.json`
 
 ### 3. H3 Spatial System
-- **Resolution 9** (~0.1 km²) defined in `prepol/config.py:H3_RES` (note: config shows 10, but system uses 9 in practice - verify before changes).
+- **Resolution MISMATCH**: `prepol/config.py` defines `H3_RES = 10` (~0.015 km²) but production forecasts use **resolution 9** (~0.1 km²). See `panels/PrepolForecast_02/_metadata.json: "h3_resolution": 9` and `GenerateWeeklyPrediction.ipynb`. This discrepancy must be reconciled before model retraining.
 - Use `prepol/helpers.py` wrappers exclusively:
   ```python
   to_h3(lat, lon, res)        # Handles h3 v3/v4 API differences (geo_to_h3 vs latlng_to_cell)
@@ -154,8 +154,9 @@ pip install -r api/requirements.txt    # Flask + ML stack
 **Python version constraint**: Must use **Python 3.11** for Render. scikit-learn 1.3.0 incompatible with 3.13 (Cython errors).
 
 **Dependency notes**:
-- `api/requirements.txt`: Production dependencies (pinned sklearn==1.3.0, numpy<2.0)
-- `requirements.txt`: Development/notebook dependencies (flask not included)
+- `api/requirements.txt`: Production dependencies (pinned sklearn==1.3.0, numpy<2.0, **includes pymongo, gunicorn, python-dotenv**)
+- `requirements.txt`: Root-level dependencies (simpler, **lacks pymongo, gunicorn, python-dotenv** - matches api/requirements.txt otherwise)
+- **Critical difference**: `pymongo` is in `api/requirements.txt` but NOT in root `requirements.txt`. For MongoDB features in notebooks, install manually: `pip install pymongo>=4.6.0`
 - Both need `pyarrow` for parquet I/O, `h3` for spatial operations
 
 ### Notebook Execution Order
@@ -181,12 +182,11 @@ sys.path.insert(0, str(project_root))
 - Run cells sequentially (execution count shows order)
 - Validate panel completeness: `len(unique_cells) × len(periods) == len(df_panel)`
 - Visual sanity checks: Use Folium maps in `H3Discretization.ipynb` to verify spatial aggregation
-
 ### Running Backend Locally
 ```powershell
 # Terminal 1: Backend (port 5000)
 cd api
-python server.py
+python server.py  # Or: flask run
 
 # Terminal 2: Frontend (port 5173)
 cd front
@@ -195,49 +195,68 @@ npm run dev
 ```
 
 **Testing data source**:
-- Local: Set `USE_MONGODB_FORECAST = False` in `server.py`, ensure parquet in `panels/PrepolForecast_XX/`
-- Production-like: Set `USE_MONGODB_FORECAST = True`, export `$env:MONGODB_URI = "..."`
+- Local (default): `USE_MONGODB_FORECAST = False` in `server.py` line 34, ensure parquet in `panels/PrepolForecast_03/` (note: hardcoded to PrepolForecast_03, not dynamic)
+- Production-like: Set `USE_MONGODB_FORECAST = True`, export `$env:MONGODB_URI = "mongodb+srv://..."`, ensure pymongo installed
 
-Health check: `http://localhost:5000/api/health` (shows data source + status)
+Health check: `http://localhost:5000/api/health` (shows data source + status + forecast metadata)
 
 **API Endpoints** (changed from old architecture):
+- `GET /api/health` — Server status + forecast data source (MongoDB/parquet) + forecast metadata summary
+- `GET /api/metadata` — Forecast period info + statistics (no date selection needed)
+- `GET /api/forecast` — Returns entire pre-computed forecast as GeoJSON (no POST body, no pagination)
+- `GET /api/model-info` — Model metadata (R², MAE, feature importance, training date)
 - `/api/health` — Server status + forecast data source
-- `/api/metadata` — Forecast period info + statistics (no date selection needed)
-- `/api/forecast` — Returns entire pre-computed forecast as GeoJSON (no POST body)
-
 **Common startup issues**:
-- "Model not found": Verify `model/rf_crime_model_*.joblib` exists
-- "Forecast not found": Check `panels/PrepolForecast_XX/PrepolForecast_XX.parquet` for parquet mode
-- "No forecast data in MongoDB": Run `import_forecast_to_mongodb.py` to upload forecasts
-- "pymongo not installed": Install with `pip install pymongo` for MongoDB mode
-- Port 5000 in use: Kill process or use `$env:PORT = "5001"`
-
+- "Model not found": Verify `model/rf_crime_model_20251125_1448.joblib` exists (file with timestamp in name)
+- "Forecast not found": Check `panels/PrepolForecast_03/PrepolForecast_03.parquet` exists (hardcoded path in `server.py:load_forecast_data_parquet()`)
+- "No forecast data in MongoDB": Run `scripts/mongodb/import_forecast_to_mongodb.py` to upload forecasts
+- "pymongo not installed": Install with `pip install pymongo>=4.6.0` (included in `api/requirements.txt` but not root)
+- Port 5000 in use: Kill process with `Get-Process | Where-Object {$_.ProcessName -eq "python"} | Stop-Process` or change port
+- "MONGODB_URI not set": Export via `$env:MONGODB_URI = "mongodb+srv://..."` (required for MongoDB mode)olForecast_XX.parquet` for parquet mode
 ### Forecast Upload to MongoDB (Production Setup)
 ```powershell
 # 1. Generate forecast panel
-# Run GenerateWeeklyPrediction.ipynb → exports to panels/PrepolForecast_XX/
+# Run notebooks/GenerateWeeklyPrediction.ipynb → exports to panels/PrepolForecast_XX/
 
 # 2. Upload forecast to MongoDB Atlas
-cd scripts/mongodb
+cd scripts\mongodb  # Note: Windows path separator
+$env:MONGODB_URI = "mongodb+srv://..."  # Set before running
 python import_forecast_to_mongodb.py --list  # List available forecasts
 python import_forecast_to_mongodb.py --forecast-name PrepolForecast_02  # Upload specific forecast
-python import_forecast_to_mongodb.py  # Upload all forecasts
+python import_forecast_to_mongodb.py  # Upload all forecasts (no args)
 
-# 3. Verify forecast in MongoDB
-$env:MONGODB_URI = "mongodb+srv://..."
-# Check collection: prepol_db.forecast_data
+# 3. Verify forecast in MongoDB (optional)
+python MongoControl.py  # Interactive terminal UI for MongoDB operations
+# Or check collection directly: prepol_db.forecast_data
+
+# 4. Health check via API
+curl http://localhost:5000/api/health  # Should show MongoDB source + forecast_id
 ```
 
-**After upload**: Update `api/server.py` to `USE_MONGODB_FORECAST = True` and deploy.
-
+**After upload**: Update `api/server.py` line 34 to `USE_MONGODB_FORECAST = True` and deploy to Render.
 ### Deployment (Vercel + Render)
-See `DEPLOYMENT.md` for full guide. Key points:
+**Note**: `DEPLOYMENT.md` file does NOT exist - deployment info reconstructed from code.
 
 **Render (Backend)**:
-- Build: `pip install -r api/requirements.txt`
-- Start: `gunicorn --chdir api wsgi:app --timeout 180`
-- Env vars: `PYTHON_VERSION=3.11.0`, `MONGODB_URI=mongodb+srv://...`
-- Free tier: 512MB RAM, spins down after 15min idle
+- Build command: `pip install -r api/requirements.txt`
+- Start command: `gunicorn --chdir api wsgi:app --timeout 180` (see `api/wsgi.py` - imports `app` from `server.py`)
+- Env vars required: 
+  - `PYTHON_VERSION=3.11.0` (scikit-learn 1.3.0 incompatible with 3.13)
+  - `MONGODB_URI=mongodb+srv://...` (if using MongoDB mode)
+- Free tier limits: 512MB RAM, spins down after 15min idle (cold start ~30s)
+- **Critical**: Set `USE_MONGODB_FORECAST = True` in `server.py` before deploying (parquet files exceed memory limit)
+
+**Vercel (Frontend)**:
+- Root directory: `front/`
+- Framework preset: Vite
+- Build command: `npm run build` (default)
+- Output directory: `dist/` (default)
+- Env vars: `VITE_API_URL=https://prepol-api.onrender.com` (build-time substitution)
+- File: `front/vercel.json` exists (check for routing config)
+
+**Alternative local deployment**:
+- `Procfile` exists at root (Heroku-style process file) - contains `web: gunicorn --chdir api wsgi:app`
+- `start-backend.ps1` exists (PowerShell script for local backend startup)
 
 **Vercel (Frontend)**:
 - Root: `front/`, Framework: Vite
@@ -280,45 +299,97 @@ See `ModelUsage.ipynb` "OPTIMIZED" cell for implementation.
 **Don’t** call `h3_neighbors()` in loops:
 ```python
 # ❌ O(n) lookups per cell
-for cell in cells:
-    neighbors = h3_neighbors(cell, k=1)
-```
-
-**Do** build lookup dict:
-```python
-# ✅ O(1) lookups
-neighbor_map = {cell: set(h3_neighbors(cell, k=1)) for cell in unique_cells}
-for cell in cells:
-    neighbors = neighbor_map[cell]
-```
-
-## Common Pitfalls
-
-❌ **Forgetting normalization** → `df = helpers.normalize_df_columns_to_upper(df)` is mandatory  
-❌ **Shuffling time series** → Breaks temporal dependencies (use `shuffle=False`)  
-❌ **Wrong timezone** → Must use `America/Recife` for RDO data  
-❌ **Deploying parquet mode** → Exceeds Render 512MB limit (use MongoDB forecast mode)  
-❌ **Using old panel_data collection** → System now requires forecast_data collection with sparse forecasts  
-❌ **Python 3.13** → scikit-learn 1.3.0 build fails (use 3.11)  
-❌ **Raw h3 calls** → API differences break across versions (use helpers)  
-❌ **Individual Folium polygons** → 10x slower than GeoJSON (vectorize)  
-❌ **Assuming NaN = missing** → In panel data, 0 crimes ≠ NaN (both valid)  
-❌ **Missing venv activation** → Import errors, wrong Python version (activate `.\venv\Scripts\Activate.ps1`)  
-❌ **Running notebooks from wrong directory** → Path errors (must run from `notebooks/` or handle `project_root`)
-
+❌ **Forgetting normalization** → `df = helpers.normalize_df_columns_to_upper(df)` is mandatory first step for RDO data  
+❌ **Shuffling time series** → Breaks temporal dependencies (use `shuffle=False` in train_test_split)  
+❌ **Wrong timezone** → Must use `America/Recife` for RDO data (not UTC)  
+❌ **Deploying parquet mode** → Exceeds Render 512MB limit (use MongoDB forecast mode: `USE_MONGODB_FORECAST = True`)  
+❌ **Using old panel_data collection** → System now requires `forecast_data` collection with sparse forecasts  
+❌ **Python 3.13** → scikit-learn 1.3.0 build fails with Cython errors (use 3.11 for Render compatibility)  
+❌ **Raw h3 calls** → API differences between v3/v4 break code (`geo_to_h3` vs `latlng_to_cell`) - use helpers only  
+❌ **Individual Folium polygons** → 10x slower than GeoJSON FeatureCollection (vectorize with single GeoJSON object)  
+❌ **Assuming NaN = missing** → In panel data, 0 crimes ≠ NaN (both are valid; NaN only in first lag periods)  
+❌ **Missing venv activation** → Import errors, wrong Python version (activate with `.\venv\Scripts\Activate.ps1` on Windows)  
+❌ **Running notebooks from wrong directory** → Path errors (must run from `notebooks/` or handle `project_root` via `Path.cwd()`)  
+❌ **H3 resolution mismatch** → `config.py` says 10, forecasts use 9 - reconcile before retraining  
+❌ **Missing pymongo in root** → `requirements.txt` lacks pymongo (only in `api/requirements.txt`) - install manually for notebooks  
+❌ **Hardcoded forecast path** → `server.py` hardcoded to `PrepolForecast_03` - update manually when new forecasts generated  
+❌ **No .env files in repo** → Must create `.env.development` and `.env.production` locally (not committed to git)
 ## Key Files Reference
 
-- **`prepol/config.py`** — All constants (H3_RES=10, TIME_FREQ='W', paths)
-- **`prepol/helpers.py`** — Reusable utilities (h3, datetime, CSV loading)
-- **`api/server.py`** — Flask endpoints (`/api/health`, `/api/metadata`, `/api/forecast`)
-- **`front/src/CrimeMap.jsx`** — Leaflet map with GeoJSON rendering + stats panel + crime type layers
-- **`model/rf_crime_model_meta_*.json`** — Model performance (R²=0.93)
-- **`notebooks/GenerateWeeklyPrediction.ipynb`** — Generate weekly forecast panels
-- **`scripts/mongodb/import_forecast_to_mongodb.py`** — Upload forecasts to MongoDB
-- **`panels/PrepolForecast_XX/`** — Pre-computed forecast panels (parquet + metadata)
-- **`front/vite.config.js`** — Vite build config (proxy settings for dev)
-- **`api/wsgi.py`** — Gunicorn entry point (imports app from server.py)
+### Core Configuration
+- **`prepol/config.py`** — All constants (H3_RES=10 but forecasts use 9!, TIME_FREQ='W', paths, timezone)
+- **`prepol/helpers.py`** — Reusable utilities (h3 wrappers, datetime parsing, CSV loading, column normalization)
 
+### Backend API
+- **`api/server.py`** — Flask app with endpoints (491 lines):
+  - Line 34: `USE_MONGODB_FORECAST` toggle
+  - Line 61: `count_to_probability()` - Poisson conversion
+  - Line 101: `load_forecast_data_parquet()` - local forecast loader (hardcoded to PrepolForecast_03)
+  - Line 150: `load_forecast_data_mongodb()` - MongoDB forecast loader
+- **`api/wsgi.py`** — Gunicorn entry point (imports `app` from `server.py`)
+- **`api/requirements.txt`** — Production dependencies (11 packages including pymongo, gunicorn)
+
+### Frontend
+- **`front/src/CrimeMap.jsx`** — Main map component (416 lines):
+  - GeoJSON rendering with crime type layers
+  - Interactive layer control (LayersControl.Overlay)
+  - Statistics panel (bottom-right overlay)
+  - Popup with prediction intervals and error margins
+- **`front/vite.config.js`** — Minimal Vite config (8 lines, no proxy)
+- **`front/vercel.json`** — Vercel deployment config
+- **`front/package.json`** — Frontend dependencies (React 18, MUI, Leaflet)
+
+### Machine Learning
+- **`model/rf_crime_model_20251125_1448.joblib`** — Trained RandomForest model (timestamped)
+- **`model/rf_crime_model_meta_20251125_1448.json`** — Model metadata (R²=0.93, MAE=0.0039)
+
+### Data Processing Notebooks
+- **`notebooks/Analysis&Treatment.ipynb`** — RDO cleaning (step 1)
+- **`notebooks/H3Discretization.ipynb`** — Spatial aggregation (step 2)
+- **`notebooks/ModelTraining.ipynb`** — Train RandomForest (step 3)
+- **`notebooks/GenerateWeeklyPrediction.ipynb`** — Generate forecasts (step 4) - uses H3 resolution 9!
+- **`notebooks/ModelUsage.ipynb`** — Interactive testing with Folium maps
+
+### Forecast Data
+- **`panels/PrepolForecast_02/`** — Forecast panel #2 (week 2, 1970 - metadata artifact)
+  - `PrepolForecast_02.parquet` — Sparse forecast (51,577 cells)
+  - `PrepolForecast_02_metadata.json` — Forecast metadata (h3_resolution: 9)
+- **`panels/PrepolForecast_03/`** — Forecast panel #3 (current default in server.py)
+
+### MongoDB Scripts
+- **`scripts/mongodb/import_forecast_to_mongodb.py`** — Upload forecasts to MongoDB (456 lines)
+- **`scripts/mongodb/MongoControl.py`** — Interactive MongoDB terminal UI
+- **`scripts/mongodb/README.md`** — MongoDB operations documentation (264 lines)
+
+### Deployment
+- **`Procfile`** — Heroku-style process file (`web: gunicorn --chdir api wsgi:app`)
+- **`start-backend.ps1`** — PowerShell script for local backend startup
+- **No `DEPLOYMENT.md`** — Deployment info must be inferred from config filesd)  
+❌ **Missing venv activation** → Import errors, wrong Python version (activate `.\venv\Scripts\Activate.ps1`)  
+## Frontend Architecture
+
+**Tech Stack**: React 18 + Vite + Material-UI + react-leaflet  
+**Key patterns**:
+- **API URL**: Read from `import.meta.env.VITE_API_URL` (build-time substitution in Vite)
+- **Development**: Runs on port 5173 (vite default), NO proxy - uses full API URLs
+- **Production**: Uses `VITE_API_URL` env var on Vercel pointing to Render backend
+- **Map rendering**: Uses GeoJSON layers with crime type filters (LayersControl.Overlay for each type)
+- **Color scheme**: Red gradient based on probability (light red = low, dark red = high) - see `getRedGradient()` in `CrimeMap.jsx`
+- **Crime type filtering**: Interactive layer control with toggleable crime types (e.g., "Furto", "Roubo", "All")
+- **Error margins**: Displays prediction intervals (68% and 95%) in popups if `weekly_mae` present in data
+
+**Environment variables** (note: .env files NOT in repo):
+- `.env.development`: `VITE_API_URL=http://localhost:5000` (create manually)
+- `.env.production`: `VITE_API_URL=https://prepol-api.onrender.com` (set in Vercel dashboard)
+- **No .env files committed** - must create locally or set in hosting platform
+
+**Build command**: `npm run build` → outputs to `front/dist/`
+
+**Key components**:
+- `CrimeMap.jsx`: Main map component (416 lines) - GeoJSON rendering, crime type layers, statistics panel
+- `Home.jsx`, `NewHome.jsx`: Landing pages
+- `HomeAppBar.jsx`, `MapAppBar.jsx`: Navigation components
+- `LoginPage.jsx`, `LoginTab.jsx`: Authentication UI (functionality unclear - no backend auth endpoints found)
 ## Frontend Architecture
 
 **Tech Stack**: React 18 + Vite + Material-UI + react-leaflet  

@@ -4,66 +4,110 @@ A machine learning-based predictive policing system that estimates crime probabi
 
 ## Overview
 
-PrePol uses spatio-temporal analysis to forecast crime patterns by converting raw police reports (RDO files) into crime forecasts using RandomForest regression. The system discretizes geographic areas into H3 hexagons and analyzes temporal patterns to predict future crime occurrences.
+PrePol is a full-stack predictive policing system that uses machine learning to forecast crime patterns. The system consists of:
 
-**Key Insight**: Crime follows predictable spatio-temporal patterns. PrePol captures these through H3 spatial discretization, temporal aggregation, and lag features to build accurate forecasts.
+- **Offline Pipeline**: Jupyter notebooks process police reports (RDO files) through H3 spatial discretization and RandomForest regression to generate weekly crime forecasts
+- **Production API**: Flask backend serves pre-computed forecasts via REST API
+- **Web Frontend**: React application visualizes crime probability heatmaps with interactive crime type filtering
+- **Database**: MongoDB Atlas stores forecast data for production deployment
+
+**Architecture**: Forecasts are pre-computed offline and stored in MongoDB, enabling fast API responses without on-demand prediction computation.
+
+**Deployment**: Backend on Render, frontend on Vercel, data on MongoDB Atlas.
 
 ## Features
 
-- **H3 Spatial Discretization**: Uses Uber's H3 hexagonal grid system (resolution 9, ~0.1 km² cells) for uniform spatial analysis
-- **Temporal Analysis**: Daily/weekly aggregation with configurable time frequencies
-- **Feature Engineering**: 
-  - Temporal lag features (1-3 periods)
-  - Rolling averages (3 and 7 periods)
-  - Spatial neighbor features for capturing crime spillover effects
-- **RandomForest Model**: Achieves R² > 0.91 on test data
-- **Interactive Visualization**: Folium-based maps for exploring predictions
+### Machine Learning Pipeline
+- **H3 Spatial Discretization**: Uber's H3 hexagonal grid (resolution 9, ~0.1 km² cells)
+- **Advanced Feature Engineering**: Temporal lags (1-3 periods), rolling averages, spatial neighbor effects
+- **RandomForest Model**: R² = 0.93, MAE = 0.0039 on test data
+- **Weekly Forecasts**: Pre-computed predictions with crime type classification
+
+### Web Application
+- **Interactive Map**: Leaflet-based heatmap with crime probability visualization
+- **Crime Type Filtering**: Toggle between specific crime types (Furto, Roubo, etc.) or view all
+- **Prediction Intervals**: Display 68% and 95% confidence intervals with error margins
+- **Real-time Statistics**: Live summary panel with forecast metadata
+
+### Production Infrastructure
+- **REST API**: Flask backend with CORS support and health monitoring
+- **MongoDB Integration**: Cloud database for forecast storage and retrieval
+- **Scalable Deployment**: Containerized backend on Render, static frontend on Vercel
 
 ## Project Structure
 
 ```
 prepol-project/
-├── prepol/                          # Core utilities module
-│   ├── config.py                   # Configuration (paths, H3 resolution, time frequency)
-│   └── helpers.py                  # Reusable functions (H3, datetime, CSV loading)
-├── notebooks/                       # Jupyter pipeline (execute in order)
+├── api/                             # Production Flask API
+│   ├── server.py                   # Main API server with endpoints
+│   ├── wsgi.py                     # Gunicorn WSGI entry point
+│   └── requirements.txt            # Production dependencies
+├── front/                           # React frontend application
+│   ├── src/
+│   │   ├── CrimeMap.jsx            # Main map component with layers
+│   │   ├── Home.jsx                # Landing page
+│   │   └── Components/             # Reusable UI components
+│   ├── vite.config.js              # Vite build configuration
+│   └── package.json                # Frontend dependencies
+├── notebooks/                       # Data processing & ML pipeline
 │   ├── Analysis&Treatment.ipynb    # 1. Clean raw RDO files
 │   ├── H3Discretization.ipynb      # 2. Spatial aggregation & panel creation
 │   ├── ModelTraining.ipynb         # 3. Train RandomForest model
-│   ├── ModelUsage.ipynb            # 4. Generate predictions
-│   └── PrePolFullPipeline.ipynb    # Alternative: end-to-end pipeline
-├── model/                           # Trained models
+│   ├── GenerateWeeklyPrediction.ipynb  # 4. Generate forecast panels
+│   └── ModelUsage.ipynb            # Interactive testing & visualization
+├── prepol/                          # Core utilities module
+│   ├── config.py                   # Global configuration
+│   └── helpers.py                  # H3 wrappers, datetime, CSV utilities
+├── model/                           # Trained ML models
 │   ├── rf_crime_model_*.joblib     # Serialized RandomForest
-│   └── rf_crime_model_meta_*.json  # Model metadata & performance metrics
-├── prepol_data/                     # Data directories (gitignored)
-│   ├── raw/                        # Original RDO CSVs (2010-2017)
-│   └── clean/                      # Processed datasets
-└── prepol_out/                      # Pipeline outputs (gitignored)
-    ├── PrePol_panel_export.parquet # Spatio-temporal panel data
-    └── prepol_predictions_*.csv    # Crime forecasts
+│   └── rf_crime_model_meta_*.json  # Model performance metrics
+├── panels/                          # Pre-computed forecast data
+│   ├── PrepolForecast_02/          # Forecast panel #2
+│   │   ├── PrepolForecast_02.parquet
+│   │   └── PrepolForecast_02_metadata.json
+│   └── PrepolForecast_03/          # Forecast panel #3 (current)
+├── scripts/                         # Utility scripts
+│   └── mongodb/                    # MongoDB management tools
+│       ├── import_forecast_to_mongodb.py
+│       └── MongoControl.py         # Interactive MongoDB CLI
+└── requirements.txt                 # Development dependencies
 ```
 
-## Data Flow
+## System Architecture
 
 ```
-RDO CSVs (2010-2017)
-    ↓
-Analysis&Treatment.ipynb → rdo_optimized.csv
-    ↓
-H3Discretization.ipynb → PrePol_panel_export.parquet
-    ↓
-ModelTraining.ipynb → rf_crime_model_*.joblib
-    ↓
-ModelUsage.ipynb → predictions
+┌─────────────────────────────────────────────────────────────────┐
+│                    OFFLINE PIPELINE (Jupyter)                   │
+├─────────────────────────────────────────────────────────────────┤
+│ RDO CSVs → Analysis&Treatment.ipynb → rdo_optimized.csv        │
+│         ↓                                                        │
+│ H3Discretization.ipynb → PrePol_panel_export.parquet           │
+│         ↓                                                        │
+│ ModelTraining.ipynb → rf_crime_model_*.joblib                   │
+│         ↓                                                        │
+│ GenerateWeeklyPrediction.ipynb → panels/PrepolForecast_XX/     │
+│         ↓                                                        │
+│ import_forecast_to_mongodb.py → MongoDB Atlas                   │
+└─────────────────────────────────────────────────────────────────┘
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                  PRODUCTION SYSTEM (Online)                     │
+├─────────────────────────────────────────────────────────────────┤
+│ React Frontend (Vercel) ←→ Flask API (Render) ←→ MongoDB       │
+│   - Interactive map       - GET /api/forecast     - forecast_data
+│   - Crime type layers     - GET /api/metadata     - 51K+ cells  │
+│   - Statistics panel      - GET /api/health                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Installation
 
 ### Prerequisites
-- Python 3.8+
-- Virtual environment (recommended)
+- Python 3.11 (required for scikit-learn 1.3.0 compatibility)
+- Node.js 18+ (for frontend development)
+- MongoDB Atlas account (for production deployment)
 
-### Setup
+### Backend Setup
 
 ```powershell
 # Clone the repository
@@ -73,33 +117,107 @@ cd prepol-project
 # Create and activate virtual environment
 python -m venv venv
 .\venv\Scripts\Activate.ps1  # PowerShell
-# or
-venv\Scripts\activate.bat    # CMD
+
+# Install API dependencies
+pip install -r api/requirements.txt
+
+# Set environment variables
+$env:MONGODB_URI = "mongodb+srv://..."  # For using MongoDB
+
+# Run backend locally
+cd api
+python server.py  # Runs on http://localhost:5000
+```
+
+### Frontend Setup
+
+```powershell
+# Navigate to frontend directory
+cd front
 
 # Install dependencies
+npm install
+
+# Run development server
+npm run dev  # Runs on http://localhost:5173
+```
+
+### Development Dependencies (Notebooks)
+
+```powershell
+# For running Jupyter notebooks
 pip install -r requirements.txt
 ```
 
-### Required Packages
-- pandas
-- numpy
-- h3
-- scikit-learn
-- joblib
-- geopandas
-- folium
-- pyarrow
+**Key Packages**:
+- **ML Stack**: pandas, numpy, scikit-learn==1.3.0, h3, pyarrow
+- **API**: flask, flask-cors, gunicorn, pymongo
+- **Visualization**: folium, geopandas, matplotlib
 
 ## Usage
 
-### Quick Start
+### Development Workflow
 
-Execute notebooks in sequence:
+#### 1. Data Processing Pipeline (One-time/Retraining)
 
-1. **Data Cleaning**: Run `Analysis&Treatment.ipynb` to clean raw RDO files
-2. **Spatial Discretization**: Run `H3Discretization.ipynb` to create H3-based panel data
-3. **Model Training**: Run `ModelTraining.ipynb` to train the RandomForest model
-4. **Predictions**: Run `ModelUsage.ipynb` to generate crime forecasts
+Execute notebooks in sequence from `notebooks/` directory:
+
+```powershell
+# 1. Clean and normalize RDO data
+Analysis&Treatment.ipynb → rdo_optimized.csv
+
+# 2. Create H3 spatial panel with temporal features
+H3Discretization.ipynb → PrePol_panel_export.parquet
+
+# 3. Train RandomForest model
+ModelTraining.ipynb → rf_crime_model_*.joblib
+```
+
+#### 2. Generate Weekly Forecasts
+
+```powershell
+# Generate forecast panel
+GenerateWeeklyPrediction.ipynb → panels/PrepolForecast_XX/
+
+# Upload to MongoDB (production)
+cd scripts\mongodb
+python import_forecast_to_mongodb.py --forecast-name PrepolForecast_03
+```
+
+#### 3. Run Local Development Server
+
+```powershell
+# Terminal 1: Backend (Flask API)
+cd api
+python server.py
+
+# Terminal 2: Frontend (React + Vite)
+cd front
+npm run dev
+
+# Access application at http://localhost:5173
+```
+
+### API Endpoints
+
+```http
+GET /api/health          # Server status and data source info
+GET /api/metadata        # Forecast period and statistics
+GET /api/forecast        # Complete forecast as GeoJSON
+GET /api/model-info      # Model performance metrics
+```
+
+### Production Deployment
+
+**Backend (Render)**:
+- Build: `pip install -r api/requirements.txt`
+- Start: `gunicorn --chdir api wsgi:app --timeout 180`
+- Env: `MONGODB_URI`, `PYTHON_VERSION=3.11.0`
+
+**Frontend (Vercel)**:
+- Root: `front/`
+- Build: `npm run build`
+- Env: `VITE_API_URL=https://prepol-api.onrender.com`
 
 ### Panel Data Structure
 
@@ -125,9 +243,14 @@ The RandomForest model uses:
 
 Key parameters in `prepol/config.py`:
 
-- `H3_RES = 9`: H3 resolution (~0.1 km² hexagons)
-- `TIME_FREQ = 'D'`: Time aggregation frequency (D=daily, W=weekly)
-- `DEFAULT_TZ = 'America/Recife'`: Timezone for datetime localization
+- `H3_RES = 10`: H3 resolution (config default; production forecasts use resolution 9)
+- `TIME_FREQ = 'W'`: Time aggregation frequency (W=weekly, D=daily)
+- `DEFAULT_TZ = 'America/Recife'`: Timezone for RDO datetime localization
+
+Data source toggle in `api/server.py`:
+
+- `USE_MONGODB_FORECAST = False`: Load from local parquet (development)
+- `USE_MONGODB_FORECAST = True`: Load from MongoDB Atlas (production)
 
 ## Performance Optimization
 
@@ -135,27 +258,62 @@ Key parameters in `prepol/config.py`:
 - **Folium maps**: GeoJSON FeatureCollections instead of individual polygons (10x+ faster)
 - **Parquet format**: Preferred for panel data (preserves dtypes, faster I/O)
 
-## Current Model Performance
+## Model Performance
 
-- Test R²: 0.91
-- Test MAE: 0.018 crimes/period
-- Top feature: `y_norm` (84% importance) - normalized historical crime
+**Current Model** (`rf_crime_model_20251125_1448.joblib`):
+- Test R²: **0.93** (excellent fit)
+- Test MAE: **0.0039** crimes/period
+- Test RMSE: 0.056
+- Top feature: `y_norm` (normalized historical crime)
+- Training data: 2013-2016 RDO reports (~1M records, 12K+ cells)
 
-## Contributing
+**Forecast Statistics** (PrepolForecast_03):
+- Cells: 51,577 H3 hexagons (resolution 9)
+- Total predicted crimes: ~1,412 crimes/week
+- High-risk cells (>80% probability): 1 cell
+- Crime types: Multi-type classification (Furto, Roubo, etc.)
 
-This is a research project. For contributions or questions, please contact the repository owner.
+## Technology Stack
+
+**Machine Learning**:
+- scikit-learn 1.3.0 (RandomForest)
+- pandas, numpy (data processing)
+- h3 (spatial discretization)
+- pyarrow (parquet I/O)
+
+**Backend**:
+- Flask 3.0+ (REST API)
+- pymongo (MongoDB driver)
+- gunicorn (WSGI server)
+- python-dotenv (environment management)
+
+**Frontend**:
+- React 18 (UI framework)
+- Vite (build tool)
+- Leaflet + react-leaflet (mapping)
+- Material-UI (component library)
+
+**Infrastructure**:
+- MongoDB Atlas (cloud database)
+- Render (backend hosting)
+- Vercel (frontend hosting)
 
 ## Data Source
 
-The project uses RDO (Registro Digital de Ocorrência) files from Brazilian police reports covering the period 2010-2017. Data is not included in the repository due to size and privacy considerations.
+The project uses **RDO (Registro Digital de Ocorrência)** files from Brazilian police reports covering **2010-2017**. Crime data includes:
+- Geographic coordinates (latitude/longitude)
+- Timestamp (date and time of occurrence)
+- Crime type classification (RUBRICA)
+- ~1M+ crime records across Recife metropolitan area
 
-## License
+Data is not included in the repository due to size and privacy considerations.
 
-[Add license information]
+## Contributing
 
-## Citation
-
-If you use this project in your research, please cite appropriately.
+This is a research project. For contributions, bug reports, or questions:
+- Open an issue on GitHub
+- Submit a pull request with improvements
+- Contact the repository maintainer
 
 ## Contact
 

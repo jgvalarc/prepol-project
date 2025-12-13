@@ -71,11 +71,8 @@ const lineHoverStyle = {
 const navItems = [
   { text: "Início", icon: <HomeIcon />, path: "/Home" },
   { text: "Prepol", icon: <MapIcon />, path: "/Map" },
-  { text: "Informação", icon: <InfoIcon />, path: "/Info" },
+  { text: "Sobre", icon: <InfoIcon />, path: "/About" },
 ];
-
-// Item Settings
-const settingsItem = { text: "User", icon: <AccountCircleIcon />, path: "/User" };
 
 export default function HomeAppBar() {
   
@@ -168,9 +165,6 @@ export default function HomeAppBar() {
 
         {/* 1.3 Rodapé (Settings e Perfil) */}
         <Box sx={{ p: 0, display: "flex", flexDirection: "column", gap: 1, mb: 3, }}>
-
-          {/* ITEM: SETTINGS */}
-          {renderListItem(settingsItem)}
 
           {/* NOVA DIVIDER */}
           <Divider sx={{ bgcolor: DIVIDER_COLOR, width: "75%", alignSelf: "center", }} />

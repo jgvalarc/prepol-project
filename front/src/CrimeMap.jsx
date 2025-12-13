@@ -278,12 +278,15 @@ export default function CrimeMap({ forecastData, loading, error }) {
           backgroundColor: '#1a1a1a'
         }}
       >
-        <CircularProgress size={60} sx={{ color: '#7011ff' }} />
+        <CircularProgress size={60} sx={{ color: '#a10000ff' }} />
         <Typography variant="h6" sx={{ mt: 2, color: 'white' }}>
           Carregando previsões...
         </Typography>
         <Typography variant="body2" sx={{ mt: 1, color: '#aaa' }}>
           Carregando dados pré-computados do servidor
+        </Typography>
+         <Typography variant="body2" sx={{ mt: 1, color: '#aaa' }}>
+          (Isso pode levar até 1 minuto)
         </Typography>
       </Box>
     );

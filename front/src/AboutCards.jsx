@@ -11,7 +11,7 @@ const teamMembers = [
         id: 1,
         name: 'Alexandre Evangelista',
         role: 'Front-end Developer',
-        desc: 'Profissional em formação em Engenharia da Computação, experiência com desenvolvimento web, prototipagem e métodologias ágeis e inglês fluente.',
+        desc: 'Profissional em formação em Engenharia da Computação, com experiência em desenvolvimento web, prototipagem e projetos com ESP32 e sistemas preditivos. Possui habilidades em JavaScript, Python, Angular, React, MySQL, Docker e Git, além de design de interfaces, criação de layouts e edição de vídeos. Conta com inglês fluente.',
         image: Alexandre, 
         linkedin: 'https://www.linkedin.com/in/alexandre-e-souza/'
     },
@@ -19,7 +19,7 @@ const teamMembers = [
         id: 2,
         name: 'João Guilherme',
         role: 'Back-end Developer',
-        desc: 'Especialista em React e performance. Meu objetivo é construir componentes escaláveis e garantir a melhor experiência de carregamento.',
+        desc: 'O idealizador do PrePol, atuando como gerente de proposta e desenvolvedor majoritário, com formação em Engenharia da Computação em andamento, experiência em inteligência artificial, aprendizado de máquina e análise de dados, além de atuação comprovada em projetos de inovação e produção científica.',
         image: Joao, 
         linkedin: 'https://www.linkedin.com/in/jo%C3%A3o-valadares-arcoverde/'
     },
@@ -27,7 +27,7 @@ const teamMembers = [
         id: 3,
         name: 'Thiago Paulo',
         role: 'Database Manager',
-        desc: 'Desenvolvimento completo, do banco de dados ao frontend. Apaixonada por otimização e novas tecnologias, garantindo a solidez do sistema.',
+        desc: 'Profissional em formação em Engenharia da Computação, atuando como estagiário na RNP, com experiência em tecnologia e atividades voltadas ao ambiente acadêmico e científico. Possui vivência prática em redes, sistemas e serviços, além de experiência com desenvolvimento web, prototipagem e metodologias ágeis. Conta com inglês avançado.',
         image: Thiago, 
         linkedin: 'https://www.linkedin.com/in/thiago-paulo-ferreira-da-silva-5499461a7/'
     }

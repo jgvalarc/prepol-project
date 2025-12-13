@@ -6,6 +6,7 @@ import Home from './Home.jsx';
 import NewHome from './NewHome.jsx';
 import LoginPage from './LoginPage.jsx'
 import PlaceholderImage from './PlaceholderImage.jsx'
+import AboutPage from './AboutPage.jsx'
 
 const router = createBrowserRouter([
   {
@@ -21,8 +22,8 @@ const router = createBrowserRouter([
   element: <PlaceholderImage/>,
 },
 {
-  path: '/NHome',
-  element: <NewHome/>,
+  path: '/About',
+  element: <AboutPage/>,
 },
 ]);
 
